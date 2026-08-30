@@ -1,0 +1,92 @@
+name: record-drift
+
+# The only workflow that talks to Stripe.
+#
+# Re-records the shipped scenarios against a real Stripe TEST account, then
+# compares them to the committed fixtures on a normalised semantic projection
+# (event set, day-offset, resulting subscription status, entitlement snapshot).
+# Event ORDERING is deliberately excluded from that projection: Stripe does not
+# guarantee delivery order, so including it would make this alarm fire on the
+# provider's own jitter and get muted within a fortnight. Order-robustness is
+# tested separately by the chaos passes in run-tests.yml.
+#
+# On drift this opens a pull request with the re-recorded fixtures so a human
+# reads a readable diff and decides. It never pushes to a branch directly.
+
+on:
+  schedule:
+    # Weekly, Monday 04:00 UTC. Stripe deletes test clocks after 30 days, so a
+    # weekly cadence stays well inside the window without burning rate limit.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: record-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    # Never runs on a fork: forks have no STRIPE_TEST_SECRET, and a fork opening
+    # fixture PRs against its own copy is noise.
+    if: github.repository == 'impruthvi/cashier-dunning'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Re-record scenarios against Stripe test mode
+        env:
+          # Test-mode key only. The recorder hard-refuses sk_live_ / rk_live_
+          # before its first API call, but the secret itself must never be a
+          # live key.
+          STRIPE_TEST_SECRET: ${{ secrets.STRIPE_TEST_SECRET }}
+        run: php vendor/bin/testbench billing:simulate --record
+
+      - name: Compare against committed fixtures
+        id: drift
+        run: |
+          if git diff --quiet -- fixtures/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No drift. Recorded lifecycles still match the committed fixtures."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- fixtures/
+          fi
+
+      - name: Open a pull request with the re-recorded fixtures
+        if: steps.drift.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="drift/$(date -u +%Y-%m-%d)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add fixtures/
+          git commit -m "chore: re-record fixtures after detected drift"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Billing drift detected on $(date -u +%Y-%m-%d)" \
+            --body "The scheduled re-record produced fixtures that differ from the committed ones on the semantic projection (event set, day-offset, resulting status, entitlement snapshot).
+
+          Ordering differences alone do not reach this point, so this is a real behaviour change: either Stripe changed something, or this account's billing settings did.
+
+          Review the diff, then merge to adopt the new recording." \
+            --base main \
+            --head "$BRANCH"
