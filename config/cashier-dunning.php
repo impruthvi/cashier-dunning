@@ -32,4 +32,24 @@ return [
         'resolver' => null,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Fixture path
+    |--------------------------------------------------------------------------
+    |
+    | Where this application's own recordings live. Fixtures found here take
+    | precedence over the reference corpus that ships with the package, because
+    | dunning behaviour depends on Stripe account settings and yours are not the
+    | corpus author's.
+    |
+    | Fixtures are committed. They are the record of what your billing provider
+    | actually did, and they are what makes the test suite run without a
+    | network.
+    |
+    */
+
+    'fixtures' => [
+        'path' => null,
+    ],
+
 ];

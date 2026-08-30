@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning;
 
+use Impruthvi\CashierDunning\Commands\DoctorCommand;
 use Impruthvi\CashierDunning\Commands\SimulateCommand;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\Exceptions\InvalidResolver;
@@ -16,7 +17,7 @@ class CashierDunningServiceProvider extends PackageServiceProvider
         $package
             ->name('cashier-dunning')
             ->hasConfigFile()
-            ->hasCommand(SimulateCommand::class);
+            ->hasCommands([SimulateCommand::class, DoctorCommand::class]);
     }
 
     public function packageRegistered(): void

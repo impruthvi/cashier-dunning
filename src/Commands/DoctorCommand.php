@@ -1,0 +1,186 @@
+<?php
+
+namespace Impruthvi\CashierDunning\Commands;
+
+use Illuminate\Console\Command;
+use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
+use Impruthvi\CashierDunning\Fixtures\Allowlist;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
+use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
+use Impruthvi\CashierDunning\Guards\KeyMode;
+use Impruthvi\CashierDunning\Guards\KeyModeGuard;
+use Throwable;
+
+/**
+ * Reports what this installation can and cannot do, before it tries.
+ *
+ * Recording is rate limited by Stripe — twenty invoices per subscription per
+ * day — and a test clock takes real seconds to advance. Discovering a
+ * misconfiguration halfway through a recording costs a scenario's worth of
+ * quota and leaves a half-built clock behind. Every check here is offline, so
+ * finding out is free.
+ */
+class DoctorCommand extends Command
+{
+    public $signature = 'billing:doctor';
+
+    public $description = 'Check whether this application can record and replay billing scenarios';
+
+    private bool $failed = false;
+
+    public function handle(): int
+    {
+        $this->newLine();
+        $this->line('  <options=bold>cashier-dunning</> environment check');
+        $this->newLine();
+
+        $mode = $this->checkStripeKey();
+        $this->checkCashier();
+        $this->checkWebhookSecret();
+        $this->checkEntitlementResolver();
+        $this->checkFixtures();
+
+        $this->newLine();
+        $this->line('  <options=bold>Replay</>  works with no Stripe account, key or network.');
+        $this->line('  <options=bold>Record</>  '.($mode->canRecord()
+            ? 'ready.'
+            : 'blocked: '.$mode->describe().'.'));
+        $this->newLine();
+
+        return $this->failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function checkStripeKey(): KeyMode
+    {
+        $key = config('cashier.secret');
+        $key = is_string($key) ? $key : null;
+        $mode = KeyModeGuard::detect($key);
+
+        // The key itself is never printed. CI logs outlive the runs that made
+        // them, and a leaked live key is a worse outcome than a vague message.
+        $shown = KeyModeGuard::redact($key);
+
+        match ($mode) {
+            KeyMode::Test => $this->ok("Stripe key: {$shown} (test mode)"),
+            KeyMode::Live => $this->caution("Stripe key: {$shown} — LIVE. Recording is refused; replay is unaffected."),
+            KeyMode::Missing => $this->ok('Stripe key: not set. Fine for replay; recording needs a test key.'),
+            KeyMode::Unrecognised => $this->caution("Stripe key: {$shown} — not a recognised format, so recording is refused."),
+        };
+
+        return $mode;
+    }
+
+    private function checkCashier(): void
+    {
+        $model = config('cashier.model');
+
+        if (! is_string($model) || $model === '') {
+            $this->caution('Cashier billable model: not configured (cashier.model).');
+
+            return;
+        }
+
+        class_exists($model)
+            ? $this->ok("Cashier billable model: {$model}")
+            : $this->problem("Cashier billable model [{$model}] does not exist.");
+    }
+
+    private function checkWebhookSecret(): void
+    {
+        $secret = config('cashier.webhook.secret');
+
+        // Cashier only applies signature verification when this is set. Replay
+        // signs its payloads either way, so both states are correct; which one
+        // you are in changes what a replay actually proves.
+        is_string($secret) && $secret !== ''
+            ? $this->ok('Webhook secret: set. Replayed events are signed and verified.')
+            : $this->caution('Webhook secret: not set. Cashier skips signature verification, so replay cannot prove your signature handling works.');
+    }
+
+    private function checkEntitlementResolver(): void
+    {
+        // Asks what is registered rather than what the container returns. The
+        // container always returns something — that is what NullResolver is for
+        // — so resolving would answer a different question than the one an
+        // operator is asking.
+        $inCode = CashierDunning::entitlementResolver() !== null;
+        $configured = config('cashier-dunning.entitlements.resolver');
+
+        if (! $inCode && $configured === null) {
+            $this->caution('Entitlement resolver: none registered. Timelines will show subscription state but no entitlements.');
+
+            return;
+        }
+
+        try {
+            $resolver = $this->laravel->make(EntitlementResolver::class);
+        } catch (Throwable $e) {
+            $this->problem('Entitlement resolver: '.$e->getMessage());
+
+            return;
+        }
+
+        $this->ok('Entitlement resolver: '.($inCode
+            ? 'closure registered in code'
+            : $resolver::class));
+    }
+
+    private function checkFixtures(): void
+    {
+        $path = config('cashier-dunning.fixtures.path');
+        $repository = new FixtureRepository(is_string($path) ? $path : null);
+
+        $files = $repository->files();
+
+        if ($files === []) {
+            $this->caution('Fixtures: none found. Record one with `billing:simulate --record`.');
+
+            return;
+        }
+
+        $allowlist = new Allowlist;
+        $broken = 0;
+
+        foreach ($files as $file) {
+            try {
+                $fixture = FixtureFile::read($file);
+
+                foreach ($fixture->steps as $step) {
+                    foreach ($step->events as $event) {
+                        $allowlist->assert($event);
+                    }
+                }
+
+                if (! $fixture->satisfiesManifest()) {
+                    throw new \RuntimeException(
+                        'missing required events: '.implode(', ', $fixture->missingRequiredEvents())
+                    );
+                }
+            } catch (Throwable $e) {
+                $broken++;
+                $this->problem('Fixture ['.basename($file).']: '.$e->getMessage());
+            }
+        }
+
+        if ($broken === 0) {
+            $this->ok(count($files).' fixture(s) valid in '.implode(', ', $repository->paths()));
+        }
+    }
+
+    private function ok(string $message): void
+    {
+        $this->line("  <fg=green>✓</> {$message}");
+    }
+
+    private function caution(string $message): void
+    {
+        $this->line("  <fg=yellow>!</> {$message}");
+    }
+
+    private function problem(string $message): void
+    {
+        $this->failed = true;
+        $this->line("  <fg=red>✗</> {$message}");
+    }
+}
