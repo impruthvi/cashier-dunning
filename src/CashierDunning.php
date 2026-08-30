@@ -19,6 +19,8 @@ class CashierDunning
 {
     private static ?Closure $entitlementResolver = null;
 
+    private static ?Closure $billableFactory = null;
+
     /**
      * @param  Closure(object): array<string, scalar|null>  $callback
      */
@@ -35,11 +37,36 @@ class CashierDunning
     }
 
     /**
+     * Teach the package how to build the model a billing lifecycle belongs to.
+     *
+     * Only needed when the configured Cashier model has no Eloquent factory, or
+     * when a simulation should run against something other than a bare model —
+     * a team with seats already allocated, say.
+     *
+     * @param  Closure(): object  $callback
+     */
+    public static function createBillableUsing(Closure $callback): void
+    {
+        self::$billableFactory = $callback;
+    }
+
+    /**
+     * Deliberately not annotated with a return shape. The callback comes from
+     * application code, so what it returns is a promise rather than a fact, and
+     * the environment checks it at the point of use.
+     */
+    public static function billableFactory(): ?Closure
+    {
+        return self::$billableFactory;
+    }
+
+    /**
      * Registered callbacks are process-global, which is what makes them work in
      * a service provider and what makes them leak between tests.
      */
     public static function flush(): void
     {
         self::$entitlementResolver = null;
+        self::$billableFactory = null;
     }
 }
