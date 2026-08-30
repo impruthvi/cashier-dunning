@@ -1,5 +1,15 @@
 name: run-tests
 
+# CONTRACT: this workflow must NEVER require a repository secret.
+#
+# The whole point of this package is that replaying a recorded billing lifecycle
+# needs no Stripe account, no API keys and no network. That property is only real
+# if it is enforced here: GitHub withholds secrets from pull requests opened by
+# forks, so if these jobs ever depend on one, every outside contributor's PR
+# turns red and the claim on the README becomes false.
+#
+# Anything that talks to Stripe belongs in record-drift.yml.
+
 on:
   push:
     paths:
@@ -16,28 +26,30 @@ on:
       - 'composer.json'
       - 'composer.lock'
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        php: [8.5, 8.4, 8.3]
-        laravel: [13.*, 12.*]
+        php: ['8.3', '8.4', '8.5']
+        laravel: ['12.*', '13.*']
         stability: [prefer-lowest, prefer-stable]
         include:
-          - laravel: 13.*
-            testbench: 11.*
-          - laravel: 12.*
-            testbench: 10.*
+          - laravel: '13.*'
+            testbench: '11.*'
+          - laravel: '12.*'
+            testbench: '10.*'
 
-    name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }} - ${{ matrix.os }}
+    name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }}
 
     steps:
       - name: Checkout code
@@ -47,7 +59,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
           coverage: none
 
       - name: Setup problem matchers
@@ -60,8 +72,45 @@ jobs:
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
           composer update --${{ matrix.stability }} --prefer-dist --no-interaction
 
-      - name: List Installed Dependencies
+      - name: List installed dependencies
         run: composer show -D
+
+      - name: Assert no Stripe credentials are present
+        # Guards the contract above. If a future change makes the suite depend on
+        # a key, this fails loudly here rather than silently on a contributor's PR.
+        run: |
+          if [ -n "${STRIPE_SECRET:-}${STRIPE_TEST_SECRET:-}${CASHIER_SECRET:-}" ]; then
+            echo "::error::Stripe credentials leaked into the replay workflow. Move that work to record-drift.yml."
+            exit 1
+          fi
+          echo "No Stripe credentials present. Replay must work without them."
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+
+  windows-smoke:
+    # One cell, not twelve. The package has no shell dependencies (events are read
+    # back over the Stripe API rather than via the Stripe CLI), so Windows needs a
+    # smoke check, not full matrix coverage.
+    runs-on: windows-latest
+    timeout-minutes: 5
+    name: Windows smoke (P8.4 - L13)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction
 
       - name: Execute tests
         run: vendor/bin/pest --ci
