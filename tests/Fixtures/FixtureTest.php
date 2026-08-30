@@ -48,6 +48,13 @@ it('round-trips every shipped fixture byte for byte', function (string $path) {
     expect(FixtureFile::encode(FixtureFile::read($path)))->toBe(file_get_contents($path));
 })->with(shippedFixturePaths());
 
+it('stores every shipped fixture with LF line endings', function (string $path) {
+    // The format declares LF. Git converts line endings on checkout unless told
+    // not to, so on Windows a CRLF fixture makes the round-trip test above
+    // report that the entire file changed. This names the real problem instead.
+    expect(file_get_contents($path))->not->toContain("\r");
+})->with(shippedFixturePaths());
+
 it('ships at least one fixture to round-trip', function () {
     // Guards the test above: a glob that matches nothing passes silently.
     expect(shippedFixturePaths())->not->toBeEmpty();
