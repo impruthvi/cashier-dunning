@@ -1,0 +1,282 @@
+{
+  "format_version": 1,
+  "provider": "stripe",
+  "scenario": "trial-dunning-cancel-reactivate",
+  "provenance": {
+    "recorded_at": "2026-08-30T00:00:00Z",
+    "recorded_by": "impruthvi",
+    "synthetic": true,
+    "source": "hand-authored reference fixture",
+    "stripe_api_version": "2026-04-22",
+    "cashier_version": "16.7.0",
+    "laravel_version": "13.29.0",
+    "php_version": "8.3",
+    "account_settings": {
+      "dunning_retries": 2,
+      "dunning_window_days": 14,
+      "after_retries": "cancel",
+      "trial_days": 14,
+      "proration_behavior": "create_prorations",
+      "automatic_tax": false
+    }
+  },
+  "manifest": {
+    "required_events": [
+      "customer.subscription.created",
+      "customer.subscription.trial_will_end",
+      "invoice.payment_failed",
+      "customer.subscription.updated",
+      "customer.subscription.deleted"
+    ],
+    "optional_events": [
+      "invoice.finalized",
+      "invoice.paid"
+    ]
+  },
+  "steps": [
+    {
+      "advance_to": "0d",
+      "label": "trial starts",
+      "events": [
+        {
+          "id": "{{evt_1}}",
+          "type": "customer.subscription.created",
+          "created": "{{t+0d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "status": "trialing",
+              "customer": "{{cus_1}}",
+              "current_period_start": "{{t+0d}}",
+              "current_period_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}",
+              "trial_end": "{{t+14d}}",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "quantity": 1,
+                    "price": {
+                      "id": "{{price_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "teams": true,
+        "api": true,
+        "projects": 10
+      }
+    },
+    {
+      "advance_to": "11d",
+      "label": "three days before the trial ends",
+      "events": [
+        {
+          "id": "{{evt_2}}",
+          "type": "customer.subscription.trial_will_end",
+          "created": "{{t+11d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "status": "trialing",
+              "customer": "{{cus_1}}",
+              "trial_end": "{{t+14d}}"
+            }
+          }
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "teams": true,
+        "api": true,
+        "projects": 10
+      }
+    },
+    {
+      "advance_to": "14d1h",
+      "label": "trial ends, first payment attempt fails",
+      "events": [
+        {
+          "id": "{{evt_3}}",
+          "type": "invoice.payment_failed",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{in_1}}",
+              "object": "invoice",
+              "status": "open",
+              "customer": "{{cus_1}}",
+              "subscription": "{{sub_1}}",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "currency": "usd",
+              "attempt_count": 1,
+              "next_payment_attempt": "{{t+17d1h}}",
+              "billing_reason": "subscription_cycle"
+            }
+          }
+        },
+        {
+          "id": "{{evt_4}}",
+          "type": "customer.subscription.updated",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "status": "past_due",
+              "customer": "{{cus_1}}",
+              "current_period_start": "{{t+14d}}",
+              "current_period_end": "{{t+44d}}",
+              "trial_start": "{{t+0d}}",
+              "trial_end": "{{t+14d}}",
+              "cancel_at_period_end": false
+            }
+          }
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "status": "past_due"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "teams": true,
+        "api": true,
+        "projects": 10
+      }
+    },
+    {
+      "advance_to": "17d1h",
+      "label": "grace period expires on the second failed attempt",
+      "events": [
+        {
+          "id": "{{evt_5}}",
+          "type": "invoice.payment_failed",
+          "created": "{{t+17d1h}}",
+          "data": {
+            "object": {
+              "id": "{{in_1}}",
+              "object": "invoice",
+              "status": "open",
+              "customer": "{{cus_1}}",
+              "subscription": "{{sub_1}}",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "currency": "usd",
+              "attempt_count": 2,
+              "next_payment_attempt": null,
+              "billing_reason": "subscription_cycle"
+            }
+          }
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "teams": false,
+        "api": false,
+        "projects": 0
+      }
+    },
+    {
+      "advance_to": "28d",
+      "label": "subscription cancelled after retries are exhausted",
+      "events": [
+        {
+          "id": "{{evt_6}}",
+          "type": "customer.subscription.deleted",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "status": "canceled",
+              "customer": "{{cus_1}}",
+              "canceled_at": "{{t+28d}}",
+              "ended_at": "{{t+28d}}",
+              "cancel_at_period_end": false
+            }
+          }
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "teams": false,
+        "api": false,
+        "projects": 0
+      }
+    },
+    {
+      "advance_to": "30d",
+      "label": "customer fixes their card and resubscribes",
+      "events": [
+        {
+          "id": "{{evt_7}}",
+          "type": "customer.subscription.created",
+          "created": "{{t+30d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_2}}",
+              "object": "subscription",
+              "status": "active",
+              "customer": "{{cus_1}}",
+              "current_period_start": "{{t+30d}}",
+              "current_period_end": "{{t+60d}}",
+              "trial_start": null,
+              "trial_end": null,
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_2}}",
+                    "quantity": 1,
+                    "price": {
+                      "id": "{{price_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "teams": true,
+        "api": true,
+        "projects": 10
+      }
+    }
+  ]
+}
