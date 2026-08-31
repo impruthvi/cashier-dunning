@@ -30,13 +30,12 @@ final readonly class Fixture
     /**
      * @param  list<Step>  $steps
      * @param  array<string, mixed>  $provenance
-     * @param  array{required_events: list<string>, optional_events: list<string>}  $manifest
      */
     public function __construct(
         public Provider $provider,
         public string $scenario,
         public array $provenance,
-        public array $manifest,
+        public Manifest $manifest,
         public array $steps,
         public int $formatVersion = self::FORMAT_VERSION,
     ) {}
@@ -73,10 +72,7 @@ final readonly class Fixture
             provider: Provider::fromFixture($data['provider']),
             scenario: $scenario,
             provenance: (array) ($data['provenance'] ?? []),
-            manifest: [
-                'required_events' => array_values((array) ($data['manifest']['required_events'] ?? [])),
-                'optional_events' => array_values((array) ($data['manifest']['optional_events'] ?? [])),
-            ],
+            manifest: Manifest::fromArray((array) ($data['manifest'] ?? [])),
             steps: $steps,
             formatVersion: $version,
         );
@@ -96,7 +92,7 @@ final readonly class Fixture
             'provider' => $this->provider->value,
             'scenario' => $this->scenario,
             'provenance' => Json::objectDeep($this->provenance),
-            'manifest' => $this->manifest,
+            'manifest' => $this->manifest->toArray(),
             'steps' => array_map(
                 static fn (Step $step): array => $step->toArray(),
                 $this->steps
@@ -121,14 +117,11 @@ final readonly class Fixture
      */
     public function missingRequiredEvents(): array
     {
-        return array_values(array_diff(
-            $this->manifest['required_events'],
-            $this->eventTypes()
-        ));
+        return $this->manifest->missingFrom($this->eventTypes());
     }
 
     public function satisfiesManifest(): bool
     {
-        return $this->missingRequiredEvents() === [];
+        return $this->manifest->isSatisfiedBy($this->eventTypes());
     }
 }
