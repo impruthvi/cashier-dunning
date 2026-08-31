@@ -70,9 +70,16 @@ final class Recorder
         $state = new RecordingState;
         $steps = [];
 
+        // One normalizer for the whole recording, not one per step. Placeholders
+        // are assigned in first-seen order, so a normalizer that restarted at
+        // every step would hand the same {{sub_1}} to two different
+        // subscriptions — and a replay would treat a customer's second
+        // subscription as their first, silently skipping it.
+        $normalizer = new Normalizer($startsAt->getTimestamp());
+
         try {
             foreach ($scenario->steps as $index => $step) {
-                $steps[] = $this->recordStep($scenario, $step, $index, $clock, $poller, $state);
+                $steps[] = $this->recordStep($scenario, $step, $index, $clock, $poller, $state, $normalizer);
             }
         } catch (RateLimitException $e) {
             throw $this->quarantine($scenario, $startsAt, 'rate limited: '.$e->getMessage(), $e);
@@ -119,6 +126,7 @@ final class Recorder
         TestClock $clock,
         EventPoller $poller,
         RecordingState $state,
+        Normalizer $normalizer,
     ): Step {
         $moment = $step->advanceTo->minutes > 0 || $index > 0
             ? $clock->advanceTo($step->advanceTo)
@@ -141,7 +149,6 @@ final class Recorder
             }
         }
 
-        $normalizer = new Normalizer($clock->startedAt->getTimestamp());
         $allowlist = new Allowlist;
 
         $recorded = [];

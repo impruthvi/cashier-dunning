@@ -6,7 +6,6 @@ use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
-use Impruthvi\CashierDunning\Tests\Support\User;
 
 afterEach(fn () => CashierDunning::flush());
 
@@ -19,8 +18,8 @@ afterEach(fn () => CashierDunning::flush());
  * files. This is the test that says the two halves fit.
  */
 it('replays a fixture this package recorded from real Stripe', function () {
-    $user = User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
-    CashierDunning::createBillableUsing(fn () => $user);
+    billableUser();
+    registerDunningPolicy();
 
     $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded');
 
@@ -42,8 +41,8 @@ it('drives Cashier to the state real Stripe ended in', function () {
     // Real Stripe cancelled the subscription during the sixth step, not the
     // fifth — the hand-authored timeline guessed wrong about when Stripe gives
     // up, and the recording corrected it.
-    $user = User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
-    CashierDunning::createBillableUsing(fn () => $user);
+    $user = billableUser();
+    registerDunningPolicy();
 
     (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
         (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded'),
@@ -84,4 +83,21 @@ it('records what the account emitted that nobody asked about', function () {
     expect($provenance['undeclared_events'])->toContain('charge.failed')
         ->and($provenance['undeclared_events'])->toContain('setup_intent.succeeded')
         ->and($provenance['synthetic'])->toBeTrue();
+});
+
+it('shows access surviving the retry window and ending when Stripe gives up', function () {
+    // The product claim, recorded rather than asserted from a hand-authored
+    // guess: access holds through every retry, drops when Stripe cancels, and
+    // returns when the customer pays.
+    $steps = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded')->steps;
+
+    $teams = array_map(
+        static fn ($step): ?bool => $step->entitlements['teams'] ?? null,
+        $steps
+    );
+
+    expect($teams[0])->toBeTrue()
+        ->and($teams[count($teams) - 3])->toBeTrue()   // retries still running
+        ->and($teams[count($teams) - 2])->toBeFalse()  // Stripe gave up
+        ->and($teams[count($teams) - 1])->toBeTrue();  // customer came back
 });

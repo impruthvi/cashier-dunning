@@ -66,6 +66,27 @@ final readonly class Step
         ];
     }
 
+    /**
+     * The same step with its entitlement snapshot filled in.
+     *
+     * Recording captures what the provider did; the entitlement column is what
+     * the application made of it, and that only exists once the events have
+     * been through the application. So it is attached afterwards rather than
+     * guessed at record time.
+     *
+     * @param  array<string, scalar|null>  $entitlements
+     */
+    public function withEntitlements(array $entitlements): self
+    {
+        return new self(
+            advanceTo: $this->advanceTo,
+            label: $this->label,
+            events: $this->events,
+            apiExchanges: $this->apiExchanges,
+            entitlements: $entitlements,
+        );
+    }
+
     /** @return list<string> */
     public function eventTypes(): array
     {

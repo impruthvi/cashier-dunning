@@ -100,6 +100,29 @@ final readonly class Fixture
         ];
     }
 
+    /**
+     * The same fixture with an entitlement snapshot attached to each step.
+     *
+     * @param  list<array<string, scalar|null>>  $perStep
+     */
+    public function withEntitlements(array $perStep): self
+    {
+        $steps = [];
+
+        foreach ($this->steps as $index => $step) {
+            $steps[] = $step->withEntitlements($perStep[$index] ?? []);
+        }
+
+        return new self(
+            provider: $this->provider,
+            scenario: $this->scenario,
+            provenance: $this->provenance,
+            manifest: $this->manifest,
+            steps: $steps,
+            formatVersion: $this->formatVersion,
+        );
+    }
+
     /** @return list<string> */
     public function eventTypes(): array
     {
