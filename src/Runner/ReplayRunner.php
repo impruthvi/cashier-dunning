@@ -5,6 +5,7 @@ namespace Impruthvi\CashierDunning\Runner;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
+use Impruthvi\CashierDunning\Chaos\EventOrderer;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
 use Impruthvi\CashierDunning\Entitlements\Snapshot;
@@ -43,8 +44,12 @@ final readonly class ReplayRunner
         private EntitlementResolver $resolver,
     ) {}
 
-    public function run(Fixture $fixture, ?CarbonImmutable $startingAt = null): ReplayReport
-    {
+    public function run(
+        Fixture $fixture,
+        ?CarbonImmutable $startingAt = null,
+        ?EventOrderer $orderer = null,
+        int $pass = 0,
+    ): ReplayReport {
         // Fixed before anything else, because the placeholder resolver and the
         // simulation clock have to agree on when the scenario begins. A fixture
         // timestamp of {{t+14d}} means nothing if they disagree.
@@ -54,7 +59,14 @@ final readonly class ReplayRunner
         $client = new FixtureHttpClient($fixture, $placeholders);
 
         return (new SimulationEnvironment($this->config, $client))->run(
-            fn (SimulationContext $context): ReplayReport => $this->replay($fixture, $context, $client, $placeholders),
+            fn (SimulationContext $context): ReplayReport => $this->replay(
+                $fixture,
+                $context,
+                $client,
+                $placeholders,
+                $orderer ?? EventOrderer::inOrder(),
+                $pass,
+            ),
             $startedAt
         );
     }
@@ -64,6 +76,8 @@ final readonly class ReplayRunner
         SimulationContext $context,
         FixtureHttpClient $client,
         Placeholders $placeholders,
+        EventOrderer $orderer,
+        int $pass,
     ): ReplayReport {
         $delivery = new WebhookDelivery(
             $this->kernel,
@@ -81,7 +95,15 @@ final readonly class ReplayRunner
             $context->advanceTo($step->advanceTo);
             $client->atStep($index);
 
-            [$result, $stepAssertions] = $this->replayStep($step, $index, $delivery, $timeline, $placeholders);
+            [$result, $stepAssertions] = $this->replayStep(
+                $step,
+                $index,
+                $delivery,
+                $timeline,
+                $placeholders,
+                $orderer,
+                $pass,
+            );
 
             $results[] = $result;
             $assertions += $stepAssertions;
@@ -108,11 +130,13 @@ final readonly class ReplayRunner
         WebhookDelivery $delivery,
         EntitlementTimeline $timeline,
         Placeholders $placeholders,
+        EventOrderer $orderer,
+        int $pass,
     ): array {
         $events = [];
         $assertions = 0;
 
-        foreach ($step->events as $event) {
+        foreach ($orderer->apply($step->events, $index, $pass) as $event) {
             /** @var array<string, mixed> $payload */
             $payload = $placeholders->resolve($event);
 
