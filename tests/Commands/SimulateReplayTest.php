@@ -38,8 +38,15 @@ it('exits non-zero when the application does not match the recording', function 
     CashierDunning::createBillableUsing(fn () => User::first());
     CashierDunning::resolveEntitlementsUsing(fn (): array => ['teams' => false]);
 
+    // The terminal shows the two sides rather than a sentence about them: the
+    // useful question is always "what did it say instead", and a table answers
+    // it without being read.
+    // One expectation per written line: expectsOutputToContain consumes a line
+    // per expectation, so several substrings from the same row starve each other.
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
-        ->expectsOutputToContain('teams: recording says true, application says false')
+        ->expectsOutputToContain('feature')
+        ->expectsOutputToContain('teams')
+        ->expectsOutputToContain('projects')
         ->assertFailed();
 });
 

@@ -9,9 +9,10 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\Exceptions\UnsafeKey;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
+use Impruthvi\CashierDunning\Reporting\JsonReport;
+use Impruthvi\CashierDunning\Reporting\TimelineRenderer;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
-use Impruthvi\CashierDunning\Runner\StepResult;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 
 class SimulateCommand extends Command
@@ -24,7 +25,8 @@ class SimulateCommand extends Command
         {--shuffle : Replay events in a different order}
         {--duplicate : Replay with duplicated events}
         {--seed= : Seed for deterministic shuffling}
-        {--iterations=4 : Number of chaos passes}';
+        {--iterations=4 : Number of chaos passes}
+        {--json= : Write a machine-readable report to this path}';
 
     public $description = 'Replay a Stripe billing lifecycle and prove your app handles it';
 
@@ -74,7 +76,9 @@ class SimulateCommand extends Command
             return self::FAILURE;
         }
 
-        $this->render($report);
+        (new TimelineRenderer($this->output, (bool) $this->option('explain')))->render($report);
+
+        $this->writeJsonReport($report);
 
         return $report->passed() ? self::SUCCESS : self::FAILURE;
     }
@@ -102,54 +106,18 @@ class SimulateCommand extends Command
         return self::SUCCESS;
     }
 
-    private function render(ReplayReport $report): void
+    private function writeJsonReport(ReplayReport $report): void
     {
-        $this->newLine();
-        $this->line("  <options=bold>{$report->scenario}</>  replayed with no Stripe account");
-        $this->newLine();
+        $path = $this->option('json');
 
-        foreach ($report->steps as $step) {
-            $this->renderStep($step);
+        if (! is_string($path) || $path === '') {
+            return;
         }
 
+        JsonReport::write($report, $path);
+
+        $this->line("  Report written to <options=bold>{$path}</>");
         $this->newLine();
-
-        // The exit code is decided by passed(), which requires assertions > 0.
-        // A run that delivered nothing and compared nothing must not read as
-        // success — that is the failure this package exists to prevent.
-        $report->passed()
-            ? $this->line("  <fg=green>PASS</>  {$report->verdict()}")
-            : $this->line("  <fg=red>FAIL</>  {$report->verdict()}");
-
-        $this->newLine();
-    }
-
-    private function renderStep(StepResult $step): void
-    {
-        $marker = $step->failed() ? '<fg=red>✗</>' : '<fg=green>✓</>';
-
-        $this->line("  {$marker} <options=bold>+{$step->advanceTo}</>  {$step->label}");
-
-        foreach ($step->events as $event) {
-            $status = $event->failed() ? "<fg=red>{$event->status}</>" : "<fg=gray>{$event->status}</>";
-            $this->line("      {$event->type}  {$status}");
-
-            if ($this->option('explain')) {
-                foreach ($event->changes as $change) {
-                    $this->line('        <fg=yellow>'.$change->describe().'</>');
-                }
-            }
-        }
-
-        foreach ($step->mismatches as $mismatch) {
-            $this->line("      <fg=red>{$mismatch}</>");
-        }
-
-        foreach ($step->events as $event) {
-            if ($event->failure !== null) {
-                $this->line("      <fg=red>{$event->failure}</>");
-            }
-        }
     }
 
     private function stripeKey(): ?string
