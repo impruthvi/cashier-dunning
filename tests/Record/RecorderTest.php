@@ -246,3 +246,37 @@ it('puts the customer on the clock so its billing can be fast-forwarded', functi
 
     $restore();
 })->throwsNoExceptions();
+
+it('gives two different subscriptions two different placeholders', function () {
+    // A normalizer that restarted at each step handed {{sub_1}} to both a
+    // customer's first subscription and the one they took out after cancelling.
+    // Replay then treated the second as the first, Cashier's duplicate check
+    // matched, and the resubscription was silently skipped — while every
+    // assertion still passed.
+    $script = recordingScript([]);
+    $script['GET /v1/events'] = ['object' => 'list', 'data' => [
+        ['id' => 'evt_2', 'object' => 'event', 'type' => 'customer.subscription.created', 'created' => 1767225600,
+            'data' => ['object' => ['id' => 'sub_second', 'object' => 'subscription', 'status' => 'active', 'customer' => 'cus_recorded']]],
+        ['id' => 'evt_1', 'object' => 'event', 'type' => 'customer.subscription.created', 'created' => 1767225500,
+            'data' => ['object' => ['id' => 'sub_first', 'object' => 'subscription', 'status' => 'trialing', 'customer' => 'cus_recorded']]],
+    ]];
+
+    [$stripe, , $restore] = scriptedStripe($script);
+
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+
+    $ids = [];
+
+    foreach ($fixture->steps as $step) {
+        foreach ($step->events as $event) {
+            $ids[] = $event['data']['object']['id'];
+        }
+    }
+
+    expect(array_unique($ids))->toHaveCount(2)
+        ->and($ids)->toContain('{{sub_1}}')
+        ->and($ids)->toContain('{{sub_2}}');
+
+    $restore();
+});

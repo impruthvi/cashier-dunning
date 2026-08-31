@@ -11,6 +11,7 @@ use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\Exceptions\UnsafeKey;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
 use Impruthvi\CashierDunning\Record\Exceptions\IncompleteRecording;
+use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Reporting\JsonReport;
 use Impruthvi\CashierDunning\Reporting\TimelineRenderer;
@@ -68,11 +69,7 @@ class SimulateCommand extends Command
         }
 
         try {
-            $report = (new ReplayRunner(
-                config(),
-                $this->laravel->make(Kernel::class),
-                $this->laravel->make(EntitlementResolver::class),
-            ))->run($fixture);
+            $report = $this->runner()->run($fixture);
         } catch (SimulationFailed $e) {
             $this->components->error($e->getMessage());
 
@@ -119,12 +116,25 @@ class SimulateCommand extends Command
         $this->newLine();
 
         try {
-            $fixture = (new Recorder(
-                Cashier::stripe(),
-                $this->quarantineDirectory(),
+            ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
+                new Recorder(Cashier::stripe(), $this->quarantineDirectory()),
+                $this->runner(),
             ))->record($scenario);
         } catch (IncompleteRecording $e) {
             $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        } catch (SimulationFailed $e) {
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        // A recording that cannot be replayed is worse than no recording: it
+        // looks like coverage. Nothing reaches disk until it has worked once.
+        if (! $report->passed()) {
+            $this->components->error('The recording could not be replayed, so it was not written.');
+            (new TimelineRenderer($this->output))->render($report);
 
             return self::FAILURE;
         }
@@ -134,7 +144,7 @@ class SimulateCommand extends Command
         FixtureFile::write($fixture, $path);
 
         $this->line("  Wrote <options=bold>{$path}</>");
-        $this->line('  '.count($fixture->eventTypes()).' event(s) captured across '.count($fixture->steps).' step(s).');
+        $this->line('  '.count($fixture->eventTypes()).' event(s) across '.count($fixture->steps).' step(s), replayed clean.');
         $this->newLine();
 
         return self::SUCCESS;
@@ -189,6 +199,15 @@ class SimulateCommand extends Command
 
         $this->line("  Report written to <options=bold>{$path}</>");
         $this->newLine();
+    }
+
+    private function runner(): ReplayRunner
+    {
+        return new ReplayRunner(
+            config(),
+            $this->laravel->make(Kernel::class),
+            $this->laravel->make(EntitlementResolver::class),
+        );
     }
 
     private function stripeKey(): ?string

@@ -73,8 +73,14 @@ final readonly class ScenarioRepository
                 ScenarioStep::at('11d', 'three days before the trial ends'),
                 ScenarioStep::at('14d1h', 'trial ends, first payment attempt fails'),
                 ScenarioStep::at('17d1h', 'grace period expires on the second failed attempt'),
-                ScenarioStep::at('28d', 'subscription cancelled after retries are exhausted'),
-                ScenarioStep::at('30d', 'customer fixes their card and resubscribes', Action::resubscribe(
+                ScenarioStep::at('28d', 'retries continue, access holds'),
+                // A step of its own between the cancellation and the recovery.
+                // Stripe's last retry, the cancellation and a resubscription all
+                // landing in one step made the entitlement column read `true`
+                // from beginning to end: the revocation was real but invisible,
+                // because the recovery undid it before anything was observed.
+                ScenarioStep::at('31d', 'retries exhausted, subscription cancelled'),
+                ScenarioStep::at('34d', 'customer fixes their card and resubscribes', Action::resubscribe(
                     price: 'price_monthly',
                     card: self::WORKING_CARD,
                 )),

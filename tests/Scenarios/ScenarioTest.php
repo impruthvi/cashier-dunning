@@ -67,13 +67,13 @@ it('knows how far the clock has to travel before starting', function () {
     // Stripe refuses to advance a test clock more than two billing periods at a
     // time, so the recorder needs this before it moves anything.
     expect((new ScenarioRepository)->find('trial-dunning-cancel-reactivate')->span()->toString())
-        ->toBe('30d');
+        ->toBe('34d');
 });
 
 it('separates the steps that change the account from the ones that watch', function () {
     $scenario = (new ScenarioRepository)->find('trial-dunning-cancel-reactivate');
 
-    expect($scenario->steps)->toHaveCount(6)
+    expect($scenario->steps)->toHaveCount(7)
         ->and($scenario->mutatingSteps())->toHaveCount(2);
 });
 
