@@ -46,7 +46,7 @@ function recordAndWrite(string $scenarioName): Fixture
     expect($fixture->satisfiesManifest())->toBeTrue()
         ->and($report->passed())->toBeTrue();
 
-    $path = dirname(__DIR__, 2).'/fixtures/stripe/'.$fixture->scenario.'-recorded.json';
+    $path = dirname(__DIR__, 2).'/fixtures/stripe/'.$fixture->scenario.'.json';
     FixtureFile::write($fixture, $path);
 
     fwrite(STDERR, "\n---RECORDED--- {$path}\n");

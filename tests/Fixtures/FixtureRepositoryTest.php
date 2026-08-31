@@ -10,7 +10,7 @@ it('finds the reference corpus that ships with the package', function () {
 
 it('loads a fixture by scenario name', function () {
     expect((new FixtureRepository)->find('trial-dunning-cancel-reactivate')->steps)
-        ->toHaveCount(6);
+        ->toHaveCount(7);
 });
 
 it('lists the available scenarios when asked for one that does not exist', function () {
