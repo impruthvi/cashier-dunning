@@ -47,6 +47,7 @@ final class Allowlist
         'customer.subscription.updated' => self::SUBSCRIPTION,
         'customer.subscription.deleted' => self::SUBSCRIPTION,
         'customer.subscription.trial_will_end' => self::SUBSCRIPTION,
+        'invoice.created' => self::INVOICE,
         'invoice.paid' => self::INVOICE,
         'invoice.payment_failed' => self::INVOICE,
         'invoice.payment_succeeded' => self::INVOICE,
@@ -98,6 +99,28 @@ final class Allowlist
         $permitted = $this->permittedFor((string) ($event['type'] ?? ''));
 
         return $this->filter($event, $permitted);
+    }
+
+    /**
+     * Drop unpermitted fields from a bare provider object, using the rules for
+     * the event type that carries it.
+     *
+     * A recorded API response and the webhook describing the same subscription
+     * are the same data arriving by different routes, so they are redacted by
+     * exactly the same list. Two lists would drift, and the one that drifted
+     * would be the one nobody was looking at.
+     *
+     * @param  array<string, mixed>  $object
+     * @return array<string, mixed>
+     */
+    public function applyToObject(array $object, string $eventType): array
+    {
+        $filtered = $this->apply(['type' => $eventType, 'data' => ['object' => $object]]);
+
+        /** @var array<string, mixed> $result */
+        $result = ($filtered['data'] ?? [])['object'] ?? [];
+
+        return $result;
     }
 
     /**

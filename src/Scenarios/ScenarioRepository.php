@@ -91,10 +91,10 @@ final readonly class ScenarioRepository
                 // others. Requiring them would make the recorder work only for
                 // accounts set up like the author's.
                 optional: [
+                    'invoice.created',
                     'invoice.finalized',
                     'invoice.paid',
-                    'invoice.created',
-                    'customer.updated',
+                    'invoice.payment_succeeded',
                 ],
             ),
         );
