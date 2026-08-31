@@ -1,6 +1,13 @@
-# cashier-dunning
+<p align="center">
+  <img src="art/logo.svg" alt="Cashier Dunning" width="128">
+</p>
 
-**Prove your Laravel dunning actually works — replay real Stripe billing lifecycles with no Stripe account.**
+<h1 align="center">cashier-dunning</h1>
+
+<p align="center">
+  <strong>Replay real Stripe billing lifecycles with no Stripe account.</strong>
+</p>
+
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/impruthvi/cashier-dunning.svg?style=flat-square)](https://packagist.org/packages/impruthvi/cashier-dunning)
 [![Tests](https://github.com/impruthvi/cashier-dunning/actions/workflows/run-tests.yml/badge.svg)](https://github.com/impruthvi/cashier-dunning/actions?query=workflow%3Arun-tests+branch%3Amain)
