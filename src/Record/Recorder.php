@@ -166,7 +166,11 @@ final class Recorder
             // has to reproduce.
             $event['created'] = $moment->getTimestamp();
 
-            $recorded[] = $allowlist->apply($normalizer->normalize($event));
+            // Redact first, then normalise. The other order lets a field that
+            // is about to be dropped consume a placeholder number, so a fixture
+            // ends up with {{price_1}} and {{price_4}} and no explanation for
+            // the gap — and a reader cannot tell which plan is which.
+            $recorded[] = $normalizer->normalize($allowlist->apply($event));
         }
 
         return new Step(
@@ -203,7 +207,9 @@ final class Recorder
         }
 
         /** @var array<string, mixed> $body */
-        $body = $normalizer->normalize($subscription->toArray());
+        $body = $normalizer->normalize(
+            $allowlist->applyToObject($subscription->toArray(), 'customer.subscription.updated')
+        );
 
         // The id is normalised through the same normalizer as the payload, so
         // the path and the body agree on which placeholder the subscription got.
@@ -214,7 +220,7 @@ final class Recorder
             path: '/v1/subscriptions/'.(is_string($id) ? $id : $state->subscriptionId),
             matchBody: [],
             responseStatus: 200,
-            responseBody: $allowlist->applyToObject($body, 'customer.subscription.updated'),
+            responseBody: $body,
         )];
     }
 
@@ -253,6 +259,11 @@ final class Recorder
 
                 return;
 
+            case ActionType::SwapPrice:
+                $this->swapPrice($state, $catalog, $parameters);
+
+                return;
+
             case ActionType::Cancel:
                 if ($state->subscriptionId !== null) {
                     ($parameters['immediately'] ?? false)
@@ -260,6 +271,38 @@ final class Recorder
                         : $this->stripe->subscriptions->update($state->subscriptionId, ['cancel_at_period_end' => true]);
                 }
         }
+    }
+
+    /**
+     * Move the subscription to another price.
+     *
+     * The current item has to be read back first: Stripe replaces a price by
+     * updating the item that holds it, and updating the subscription's `items`
+     * without naming the existing item id adds a second line rather than
+     * changing the first — a plan the customer is billed for twice.
+     *
+     * @param  array<string, scalar|null>  $parameters
+     */
+    private function swapPrice(RecordingState $state, Catalog $catalog, array $parameters): void
+    {
+        if ($state->subscriptionId === null) {
+            return;
+        }
+
+        $subscription = $this->stripe->subscriptions->retrieve($state->subscriptionId);
+        $item = $subscription->items->data[0] ?? null;
+
+        if ($item === null) {
+            return;
+        }
+
+        $this->stripe->subscriptions->update($state->subscriptionId, [
+            'items' => [[
+                'id' => $item->id,
+                'price' => $catalog->priceFor((string) ($parameters['price'] ?? 'price_starter')),
+            ]],
+            'proration_behavior' => (string) ($parameters['proration_behavior'] ?? 'create_prorations'),
+        ]);
     }
 
     /** @param array<string, scalar|null> $parameters */

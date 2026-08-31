@@ -23,14 +23,29 @@ final readonly class Catalog
 {
     public const PRODUCT_NAME = 'Cashier Dunning Fixture Plan';
 
+    /**
+     * What each scenario price costs. Kept here rather than in the scenario so
+     * that two scenarios naming the same price cannot disagree about it, which
+     * would make their fixtures incomparable for no reason.
+     *
+     * @var array<string, int>
+     */
+    private const AMOUNTS = [
+        'price_monthly' => 3000,
+        'price_pro' => 5000,
+        'price_starter' => 1000,
+    ];
+
     public function __construct(private StripeClient $stripe) {}
 
     /**
      * Returns the Stripe price id for a scenario's price name, creating the
      * product and price if this account has never recorded before.
      */
-    public function priceFor(string $name, int $amount = 3000, string $currency = 'usd', string $interval = 'month'): string
+    public function priceFor(string $name, ?int $amount = null, string $currency = 'usd', string $interval = 'month'): string
     {
+        $amount ??= self::AMOUNTS[$name] ?? 3000;
+
         $existing = $this->stripe->prices->all([
             'lookup_keys' => [$name],
             'limit' => 1,

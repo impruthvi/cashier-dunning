@@ -29,7 +29,10 @@ final readonly class ScenarioRepository
     /** @return array<string, Scenario> */
     public function all(): array
     {
-        $scenarios = [$this->trialDunningCancelReactivate()];
+        $scenarios = [
+            $this->trialDunningCancelReactivate(),
+            $this->downgradeOverUsageLimit(),
+        ];
 
         return array_column(
             array_map(static fn (Scenario $s): array => [$s->name, $s], $scenarios),
@@ -47,6 +50,53 @@ final readonly class ScenarioRepository
     public function names(): array
     {
         return array_keys($this->all());
+    }
+
+    /**
+     * A customer on the larger plan moves to the smaller one.
+     *
+     * The interesting moment is not the downgrade itself but the instant after
+     * it: entitlements drop while the customer is still inside the period they
+     * paid the higher price for, and an application that reads the plan without
+     * reading the period will cut off access somebody has already bought.
+     *
+     * Usage is deliberately not measured here. Stripe's usage alerts do not
+     * fire under a test clock, so a scenario that depended on them would record
+     * nothing; what a customer has used is the application's own count, and the
+     * entitlement resolver is where that belongs.
+     */
+    private function downgradeOverUsageLimit(): Scenario
+    {
+        return new Scenario(
+            name: 'downgrade-over-usage-limit',
+            description: 'A customer on the larger plan moves to the smaller one '.
+                'mid-period, and their limit drops below what they are already using.',
+            steps: [
+                ScenarioStep::at('0d', 'subscribed to the larger plan', Action::subscribe(
+                    price: 'price_pro',
+                    card: self::WORKING_CARD,
+                )),
+                ScenarioStep::at('7d', 'a week in, nothing has changed'),
+                ScenarioStep::at('14d', 'customer downgrades mid-period', Action::swapPrice('price_starter')),
+                ScenarioStep::at('21d', 'still inside the period they paid the higher price for'),
+                // Past the renewal, so the recording covers the first invoice
+                // charged at the lower price rather than stopping at the credit.
+                ScenarioStep::at('32d', 'renewal at the smaller plan'),
+            ],
+            manifest: new Manifest(
+                required: [
+                    'customer.subscription.created',
+                    'customer.subscription.updated',
+                ],
+                optional: [
+                    'invoice.created',
+                    'invoice.finalized',
+                    'invoice.paid',
+                    'invoice.payment_succeeded',
+                    'invoice.payment_failed',
+                ],
+            ),
+        );
     }
 
     /**

@@ -25,6 +25,9 @@ enum ActionType: string
     /** Start a second subscription after the first one ended. */
     case Resubscribe = 'resubscribe';
 
+    /** Move the subscription to a different price — the downgrade half. */
+    case SwapPrice = 'swap_price';
+
     /** Cancel, either at period end or immediately. */
     case Cancel = 'cancel';
 

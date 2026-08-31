@@ -3,12 +3,12 @@
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
-use Impruthvi\CashierDunning\Tests\Support\User;
 use Laravel\Cashier\Cashier;
 
 /**
@@ -30,25 +30,9 @@ beforeEach(function () {
     config()->set('cashier.secret', $key);
 });
 
-it('records the dunning scenario against Stripe', function () {
-    // The application whose entitlement policy the recording will capture:
-    // access survives the retry window and ends when Stripe gives up.
-    $user = User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
-
-    CashierDunning::createBillableUsing(fn () => $user);
-    CashierDunning::resolveEntitlementsUsing(function (User $billable): array {
-        $billable->refresh();
-        $subscription = $billable->subscriptions()->where('type', 'default')->latest('id')->first();
-
-        $entitled = $subscription !== null
-            && ! $billable->dunning_exhausted
-            && $subscription->ends_at === null
-            && in_array($subscription->stripe_status, ['trialing', 'active', 'past_due'], true);
-
-        return ['teams' => $entitled, 'api' => $entitled, 'projects' => $entitled ? 10 : 0];
-    });
-
-    $scenario = (new ScenarioRepository)->find('trial-dunning-cancel-reactivate');
+function recordAndWrite(string $scenarioName): Fixture
+{
+    $scenario = (new ScenarioRepository)->find($scenarioName);
 
     ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
         new Recorder(
@@ -68,12 +52,30 @@ it('records the dunning scenario against Stripe', function () {
     fwrite(STDERR, "\n---RECORDED--- {$path}\n");
     foreach ($fixture->steps as $step) {
         fwrite(STDERR, sprintf(
-            "  +%-7s %-52s %s\n",
+            "  +%-7s %-46s %s\n",
             $step->advanceTo->toString(),
-            implode(', ', $step->eventTypes()) ?: '(no events)',
+            $step->label,
             json_encode($step->entitlements),
         ));
     }
+
+    return $fixture;
+}
+
+it('records the dunning scenario against Stripe', function () {
+    billableUser();
+    registerDunningPolicy();
+
+    expect(recordAndWrite('trial-dunning-cancel-reactivate')->steps)->toHaveCount(7);
+
+    CashierDunning::flush();
+})->group('live');
+
+it('records the downgrade scenario against Stripe', function () {
+    billableUser();
+    registerPlanLimits();
+
+    expect(recordAndWrite('downgrade-over-usage-limit')->steps)->toHaveCount(5);
 
     CashierDunning::flush();
 })->group('live');

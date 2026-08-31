@@ -48,6 +48,19 @@ final readonly class Action
         return new self(ActionType::Resubscribe, ['price' => $price, 'card' => $card]);
     }
 
+    /**
+     * Proration is explicit rather than defaulted, because it is the difference
+     * between a downgrade that credits the customer and one that quietly
+     * charges them, and a fixture should say which it recorded.
+     */
+    public static function swapPrice(string $price, string $prorationBehavior = 'create_prorations'): self
+    {
+        return new self(ActionType::SwapPrice, [
+            'price' => $price,
+            'proration_behavior' => $prorationBehavior,
+        ]);
+    }
+
     public static function cancel(bool $immediately = false): self
     {
         return new self(ActionType::Cancel, ['immediately' => $immediately]);
@@ -85,6 +98,11 @@ final readonly class Action
             ),
             ActionType::ReplacePaymentMethod => 'replace the payment method with '.($this->parameters['card'] ?? '?'),
             ActionType::Resubscribe => 'subscribe again to '.($this->parameters['price'] ?? '?'),
+            ActionType::SwapPrice => sprintf(
+                'move to %s (%s)',
+                $this->parameters['price'] ?? '?',
+                $this->parameters['proration_behavior'] ?? 'create_prorations',
+            ),
             ActionType::Cancel => ($this->parameters['immediately'] ?? false) ? 'cancel immediately' : 'cancel at period end',
         };
     }
