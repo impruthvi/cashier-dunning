@@ -10,6 +10,7 @@ use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\KeyMode;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
+use Laravel\Cashier\Cashier;
 use Throwable;
 
 /**
@@ -73,17 +74,19 @@ class DoctorCommand extends Command
 
     private function checkCashier(): void
     {
-        $model = config('cashier.model');
-
-        if (! is_string($model) || $model === '') {
-            $this->caution('Cashier billable model: not configured (cashier.model).');
-
-            return;
-        }
+        // Cashier has no config key for this. The billable model is a static on
+        // Cashier itself, set with useCustomerModel() and defaulting to
+        // App\Models\User — which is why a package that has been renamed or a
+        // Laravel application with a different namespace fails deep inside a
+        // webhook handler rather than at boot.
+        $model = Cashier::$customerModel;
 
         class_exists($model)
             ? $this->ok("Cashier billable model: {$model}")
-            : $this->problem("Cashier billable model [{$model}] does not exist.");
+            : $this->problem(
+                "Cashier billable model [{$model}] does not exist. Set it in a ".
+                'service provider: Cashier::useCustomerModel(User::class).'
+            );
     }
 
     private function checkWebhookSecret(): void

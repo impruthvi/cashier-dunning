@@ -67,6 +67,10 @@ final class Allowlist
         'data.object.items.data.*.id',
         'data.object.items.data.*.quantity',
         'data.object.items.data.*.price.id',
+        // Cashier writes stripe_product on every subscription item, so a fixture
+        // without it cannot be replayed at all. A product id names a plan; it is
+        // not customer data.
+        'data.object.items.data.*.price.product',
         'data.object.items.data.*.price.recurring.interval',
     ];
 
