@@ -85,3 +85,13 @@ it('says what a missing webhook secret costs rather than just flagging it', func
         ->expectsOutputToContain('cannot prove your signature handling works')
         ->assertSuccessful();
 });
+
+it('reports a scenario that has already been recorded', function () {
+    $this->artisan('billing:doctor')
+        ->expectsOutputToContain('Scenario [trial-dunning-cancel-reactivate]: recorded.')
+        ->assertSuccessful();
+});
+
+// The "not recorded yet" branch stays uncovered until a second scenario
+// exists: every scenario the package ships also ships a fixture, and a test
+// that pointed the corpus somewhere empty would still find the package's own.

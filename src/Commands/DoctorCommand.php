@@ -10,6 +10,7 @@ use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\KeyMode;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
+use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
 use Laravel\Cashier\Cashier;
 use Throwable;
 
@@ -41,6 +42,7 @@ class DoctorCommand extends Command
         $this->checkWebhookSecret();
         $this->checkEntitlementResolver();
         $this->checkFixtures();
+        $this->checkScenarios();
 
         $this->newLine();
         $this->line('  <options=bold>Replay</>  works with no Stripe account, key or network.');
@@ -168,6 +170,25 @@ class DoctorCommand extends Command
 
         if ($broken === 0) {
             $this->ok(count($files).' fixture(s) valid in '.implode(', ', $repository->paths()));
+        }
+    }
+
+    /**
+     * Which stories this installation can record, and which it already has.
+     *
+     * Recording costs Stripe quota and real minutes, so knowing that a scenario
+     * is already recorded is worth a line — and knowing that one is not is what
+     * tells you the gap is a missing recording rather than a broken replay.
+     */
+    private function checkScenarios(): void
+    {
+        $path = config('cashier-dunning.fixtures.path');
+        $recorded = array_keys((new FixtureRepository(is_string($path) ? $path : null))->scenarios());
+
+        foreach ((new ScenarioRepository)->all() as $name => $scenario) {
+            in_array($name, $recorded, true)
+                ? $this->ok("Scenario [{$name}]: recorded.")
+                : $this->caution("Scenario [{$name}]: not recorded yet. `billing:simulate {$name} --record`.");
         }
     }
 
