@@ -62,6 +62,7 @@
                     "quantity": 1,
                     "price": {
                       "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
                       "recurring": {
                         "interval": "month"
                       }
@@ -144,7 +145,22 @@
               "current_period_end": "{{t+44d}}",
               "trial_start": "{{t+0d}}",
               "trial_end": "{{t+14d}}",
-              "cancel_at_period_end": false
+              "cancel_at_period_end": false,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "quantity": 1,
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    }
+                  }
+                ]
+              }
             }
           }
         }
@@ -220,7 +236,22 @@
               "customer": "{{cus_1}}",
               "canceled_at": "{{t+28d}}",
               "ended_at": "{{t+28d}}",
-              "cancel_at_period_end": false
+              "cancel_at_period_end": false,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "quantity": 1,
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    }
+                  }
+                ]
+              }
             }
           }
         }
@@ -260,6 +291,7 @@
                     "quantity": 1,
                     "price": {
                       "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
                       "recurring": {
                         "interval": "month"
                       }

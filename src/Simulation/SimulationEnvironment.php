@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Contracts\Config\Repository;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
+use Laravel\Cashier\Cashier;
 use Stripe\ApiRequestor;
 use Stripe\HttpClient\ClientInterface;
 use Throwable;
@@ -123,9 +124,10 @@ final class SimulationEnvironment
             return $billable;
         }
 
-        $model = $this->config->get('cashier.model');
+        // Cashier keeps the billable model in a static, not in configuration.
+        $model = Cashier::$customerModel;
 
-        if (is_string($model) && $model !== '' && method_exists($model, 'factory')) {
+        if (method_exists($model, 'factory')) {
             try {
                 return $model::factory()->create();
             } catch (Throwable $e) {

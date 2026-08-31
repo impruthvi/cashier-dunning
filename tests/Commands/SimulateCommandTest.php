@@ -25,5 +25,5 @@ it('does not check the key when replaying', function () {
 
     $this->artisan('billing:simulate')
         ->doesntExpectOutputToContain('LIVE')
-        ->assertFailed();
+        ->assertSuccessful();
 });
