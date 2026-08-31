@@ -50,7 +50,8 @@ it('encodes to stable json with a trailing newline', function () {
 });
 
 it('writes a report where CI can pick it up, creating the directory', function () {
-    $path = sys_get_temp_dir().'/cashier-dunning-report-'.uniqid().'/report.json';
+    $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cashier-dunning-report-'.uniqid()
+        .DIRECTORY_SEPARATOR.'report.json';
 
     JsonReport::write(passingReport(), $path);
 
@@ -65,9 +66,15 @@ it('is written by the command when asked for', function () {
     $user = User::create(['name' => 'J', 'email' => 'j@e.com', 'stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => $user);
 
-    $path = sys_get_temp_dir().'/cashier-dunning-cmd-'.uniqid().'.json';
+    $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cashier-dunning-cmd-'.uniqid().'.json';
 
-    $this->artisan('billing:simulate trial-dunning-cancel-reactivate --json='.$path)->assertFailed();
+    // Options passed as an array, not interpolated into the command string:
+    // artisan('... --json='.$path) is tokenised shell-style, and a Windows path
+    // full of backslashes comes out the other side as escape sequences.
+    $this->artisan('billing:simulate', [
+        'scenario' => 'trial-dunning-cancel-reactivate',
+        '--json' => $path,
+    ])->assertFailed();
 
     $written = json_decode((string) file_get_contents($path), true);
 
