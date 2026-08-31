@@ -82,6 +82,22 @@ final readonly class Manifest
         )));
     }
 
+    /**
+     * Whether the scenario asked for this event type at all.
+     *
+     * Recording keeps only declared events. A real Stripe account emits three
+     * times more than a billing timeline needs — setup intents, charge attempts,
+     * every intermediate invoice update — and the allowlist has no field rules
+     * for most of them, so they survive as husks carrying nothing but an id.
+     * Shipping those would triple the size of a fixture with lines no reviewer
+     * can check and no replay can use.
+     */
+    public function declares(string $eventType): bool
+    {
+        return in_array($eventType, $this->required, true)
+            || in_array($eventType, $this->optional, true);
+    }
+
     /** @param list<string> $eventTypes */
     public function isSatisfiedBy(array $eventTypes): bool
     {

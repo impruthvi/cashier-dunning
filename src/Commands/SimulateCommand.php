@@ -6,14 +6,19 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\Exceptions\UnsafeKey;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
+use Impruthvi\CashierDunning\Record\Exceptions\IncompleteRecording;
+use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Reporting\JsonReport;
 use Impruthvi\CashierDunning\Reporting\TimelineRenderer;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
+use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
+use Laravel\Cashier\Cashier;
 
 class SimulateCommand extends Command
 {
@@ -44,9 +49,7 @@ class SimulateCommand extends Command
                 return self::FAILURE;
             }
 
-            $this->components->error('Recording is not implemented yet.');
-
-            return self::FAILURE;
+            return $this->record();
         }
 
         $repository = new FixtureRepository($this->fixturePath());
@@ -81,6 +84,74 @@ class SimulateCommand extends Command
         $this->writeJsonReport($report);
 
         return $report->passed() ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Record a scenario against a real Stripe test account.
+     *
+     * Slow and rate limited — twenty invoices per subscription per day — so the
+     * scenario is printed before anything is created. Nobody should discover
+     * what a recording does to their account by watching it happen.
+     */
+    private function record(): int
+    {
+        $name = $this->argument('scenario');
+        $scenario = is_string($name) ? (new ScenarioRepository)->find($name) : null;
+
+        if ($scenario === null) {
+            $this->components->error(sprintf(
+                'Unknown scenario [%s]. Available: %s.',
+                is_string($name) ? $name : '',
+                implode(', ', (new ScenarioRepository)->names()),
+            ));
+
+            return self::FAILURE;
+        }
+
+        $this->newLine();
+        $this->line("  Recording <options=bold>{$scenario->name}</> against Stripe test mode");
+        $this->newLine();
+
+        foreach ($scenario->describeActions() as $action) {
+            $this->line("  {$action}");
+        }
+
+        $this->newLine();
+
+        try {
+            $fixture = (new Recorder(
+                Cashier::stripe(),
+                $this->quarantineDirectory(),
+            ))->record($scenario);
+        } catch (IncompleteRecording $e) {
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $path = $this->fixtureDestination($fixture->scenario);
+
+        FixtureFile::write($fixture, $path);
+
+        $this->line("  Wrote <options=bold>{$path}</>");
+        $this->line('  '.count($fixture->eventTypes()).' event(s) captured across '.count($fixture->steps).' step(s).');
+        $this->newLine();
+
+        return self::SUCCESS;
+    }
+
+    private function fixtureDestination(string $scenario): string
+    {
+        $base = $this->fixturePath() ?? base_path('tests'.DIRECTORY_SEPARATOR.'fixtures'.DIRECTORY_SEPARATOR.'billing');
+
+        return $base.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.$scenario.'.json';
+    }
+
+    private function quarantineDirectory(): string
+    {
+        $base = $this->fixturePath() ?? base_path('tests'.DIRECTORY_SEPARATOR.'fixtures'.DIRECTORY_SEPARATOR.'billing');
+
+        return $base.DIRECTORY_SEPARATOR.'quarantine';
     }
 
     private function listScenarios(FixtureRepository $repository): int
