@@ -21,7 +21,7 @@ it('replays a fixture this package recorded from real Stripe', function () {
     billableUser();
     registerDunningPolicy();
 
-    $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded');
+    $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
     $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
         $fixture,
@@ -45,7 +45,7 @@ it('drives Cashier to the state real Stripe ended in', function () {
     registerDunningPolicy();
 
     (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
-        (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded'),
+        (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );
 
@@ -60,7 +60,7 @@ it('carries only events the scenario declared', function () {
     // Real Stripe emitted 76 events across this timeline; 50 of them had no
     // allowlist rules and would have survived as husks carrying nothing but an
     // id. The manifest is what keeps a fixture reviewable.
-    $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded');
+    $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
     expect(array_unique($fixture->eventTypes()))->each->toBeIn([
         'customer.subscription.created',
@@ -78,7 +78,7 @@ it('carries only events the scenario declared', function () {
 it('records what the account emitted that nobody asked about', function () {
     // Dropped from the fixture, kept in provenance. That is how a manifest
     // learns as Stripe changes, rather than by someone noticing years later.
-    $provenance = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded')->provenance;
+    $provenance = (new FixtureRepository)->find('trial-dunning-cancel-reactivate')->provenance;
 
     expect($provenance['undeclared_events'])->toContain('charge.failed')
         ->and($provenance['undeclared_events'])->toContain('setup_intent.succeeded')
@@ -89,7 +89,7 @@ it('shows access surviving the retry window and ending when Stripe gives up', fu
     // The product claim, recorded rather than asserted from a hand-authored
     // guess: access holds through every retry, drops when Stripe cancels, and
     // returns when the customer pays.
-    $steps = (new FixtureRepository)->find('trial-dunning-cancel-reactivate-recorded')->steps;
+    $steps = (new FixtureRepository)->find('trial-dunning-cancel-reactivate')->steps;
 
     $teams = array_map(
         static fn ($step): ?bool => $step->entitlements['teams'] ?? null,

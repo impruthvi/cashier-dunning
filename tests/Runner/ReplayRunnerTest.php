@@ -32,9 +32,9 @@ it('replays the shipped dunning fixture end to end with no Stripe account', func
     $report = runner()->run(shippedDunningFixture(), $start);
 
     expect($report->passed())->toBeTrue()
-        ->and($report->verdict())->toBe('All 25 assertions passed.')
-        ->and($report->steps)->toHaveCount(6)
-        ->and($report->eventsDelivered())->toBe(7)
+        ->and($report->verdict())->toBe('All 46 assertions passed.')
+        ->and($report->steps)->toHaveCount(7)
+        ->and($report->eventsDelivered())->toBe(25)
         ->and($report->failures())->toBe([]);
 });
 
@@ -111,9 +111,10 @@ it('keeps access alive through the retry window', function () use ($start) {
 
     $report = runner()->run(shippedDunningFixture(), $start);
 
-    expect($report->steps[2]->label)->toBe('trial ends, first payment attempt fails')
-        ->and($report->steps[2]->actualEntitlements['teams'])->toBeTrue()
-        ->and($report->steps[3]->actualEntitlements['teams'])->toBeFalse();
+    expect($report->steps[4]->label)->toBe('retries continue, access holds')
+        ->and($report->steps[4]->actualEntitlements['teams'])->toBeTrue()
+        ->and($report->steps[5]->label)->toBe('retries exhausted, subscription cancelled')
+        ->and($report->steps[5]->actualEntitlements['teams'])->toBeFalse();
 });
 
 it('fails when the application revokes access too early', function () use ($start) {
@@ -136,8 +137,11 @@ it('fails when the application revokes access too early', function () use ($star
     expect($report->passed())->toBeFalse()
         ->and($report->failures())->toHaveCount(1)
         ->and($report->failures()[0]->label)->toBe('trial ends, first payment attempt fails')
-        ->and($report->failures()[0]->mismatches[0])
-        ->toBe('teams: recording says true, application says false');
+        // Asserted by content, not by position: entitlements are reported in
+        // sorted order, so which feature comes first is alphabetical rather
+        // than meaningful.
+        ->and($report->failures()[0]->mismatches)
+        ->toContain('teams: recording says true, application says false');
 });
 
 it('stops at the first failing step', function () use ($start) {

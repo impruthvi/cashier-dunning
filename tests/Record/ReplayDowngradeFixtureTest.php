@@ -14,7 +14,7 @@ afterEach(fn () => CashierDunning::flush());
 
 function downgradeFixture(): Fixture
 {
-    return (new FixtureRepository)->find('downgrade-over-usage-limit-recorded');
+    return (new FixtureRepository)->find('downgrade-over-usage-limit');
 }
 
 function replayDowngrade(): ReplayReport

@@ -32,7 +32,7 @@ it('reads the reference dunning fixture', function () {
 
     expect($fixture->provider)->toBe(Provider::Stripe)
         ->and($fixture->scenario)->toBe('trial-dunning-cancel-reactivate')
-        ->and($fixture->steps)->toHaveCount(6)
+        ->and($fixture->steps)->toHaveCount(7)
         ->and($fixture->provenance['synthetic'])->toBeTrue();
 });
 
@@ -127,8 +127,8 @@ it('marks single-event steps as not shuffleable', function () {
 
     // Shuffling one event is a no-op; reporting it as a passing chaos run would
     // be coverage theatre.
-    expect($fixture->steps[0]->isShuffleable())->toBeFalse()
-        ->and($fixture->steps[2]->isShuffleable())->toBeTrue();
+    expect($fixture->steps[1]->isShuffleable())->toBeFalse()
+        ->and($fixture->steps[0]->isShuffleable())->toBeTrue();
 });
 
 it('exposes format version as a constant so the loader can gate on it', function () {

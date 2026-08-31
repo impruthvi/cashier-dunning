@@ -3,22 +3,26 @@
   "provider": "stripe",
   "scenario": "trial-dunning-cancel-reactivate",
   "provenance": {
-    "recorded_at": "2026-08-30T00:00:00Z",
-    "recorded_by": "impruthvi",
+    "recorded_at": "2026-08-30T11:00:00+00:00",
     "synthetic": true,
-    "source": "hand-authored reference fixture",
-    "stripe_api_version": "2026-04-22",
+    "source": "recorded from a dedicated Stripe test account",
+    "stripe_api_version": "20.3.1",
     "cashier_version": "16.7.0",
-    "laravel_version": "13.29.0",
     "php_version": "8.3",
-    "account_settings": {
-      "dunning_retries": 2,
-      "dunning_window_days": 14,
-      "after_retries": "cancel",
-      "trial_days": 14,
-      "proration_behavior": "create_prorations",
-      "automatic_tax": false
-    }
+    "undeclared_events": [
+      "customer.created",
+      "payment_method.attached",
+      "customer.updated",
+      "setup_intent.created",
+      "setup_intent.succeeded",
+      "invoice.upcoming",
+      "charge.failed",
+      "payment_intent.payment_failed",
+      "payment_intent.created",
+      "invoice.updated",
+      "charge.succeeded",
+      "payment_intent.succeeded"
+    ]
   },
   "manifest": {
     "required_events": [
@@ -29,8 +33,10 @@
       "customer.subscription.deleted"
     ],
     "optional_events": [
+      "invoice.created",
       "invoice.finalized",
-      "invoice.paid"
+      "invoice.paid",
+      "invoice.payment_succeeded"
     ]
   },
   "steps": [
@@ -40,129 +46,112 @@
       "events": [
         {
           "id": "{{evt_1}}",
-          "type": "customer.subscription.created",
+          "created": "{{t+0d}}",
+          "data": {
+            "object": {
+              "id": "{{in_1}}",
+              "object": "invoice",
+              "amount_due": 0,
+              "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.finalized"
+        },
+        {
+          "id": "{{evt_2}}",
+          "created": "{{t+0d}}",
+          "data": {
+            "object": {
+              "id": "{{in_1}}",
+              "object": "invoice",
+              "amount_due": 0,
+              "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.created"
+        },
+        {
+          "id": "{{evt_3}}",
+          "created": "{{t+0d}}",
+          "data": {
+            "object": {
+              "id": "{{in_1}}",
+              "object": "invoice",
+              "amount_due": 0,
+              "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.paid"
+        },
+        {
+          "id": "{{evt_4}}",
           "created": "{{t+0d}}",
           "data": {
             "object": {
               "id": "{{sub_1}}",
               "object": "subscription",
-              "status": "trialing",
-              "customer": "{{cus_1}}",
-              "current_period_start": "{{t+0d}}",
-              "current_period_end": "{{t+14d}}",
-              "trial_start": "{{t+0d}}",
-              "trial_end": "{{t+14d}}",
               "cancel_at_period_end": false,
               "canceled_at": null,
+              "customer": "{{cus_1}}",
               "ended_at": null,
               "items": {
                 "data": [
                   {
                     "id": "{{si_1}}",
-                    "quantity": 1,
                     "price": {
                       "id": "{{price_1}}",
                       "product": "{{prod_1}}",
                       "recurring": {
                         "interval": "month"
                       }
-                    }
+                    },
+                    "quantity": 1
                   }
                 ]
-              }
-            }
-          }
-        }
-      ],
-      "api_responses": [],
-      "entitlements": {
-        "teams": true,
-        "api": true,
-        "projects": 10
-      }
-    },
-    {
-      "advance_to": "11d",
-      "label": "three days before the trial ends",
-      "events": [
-        {
-          "id": "{{evt_2}}",
-          "type": "customer.subscription.trial_will_end",
-          "created": "{{t+11d}}",
-          "data": {
-            "object": {
-              "id": "{{sub_1}}",
-              "object": "subscription",
+              },
               "status": "trialing",
-              "customer": "{{cus_1}}",
-              "trial_end": "{{t+14d}}"
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
             }
-          }
-        }
-      ],
-      "api_responses": [],
-      "entitlements": {
-        "teams": true,
-        "api": true,
-        "projects": 10
-      }
-    },
-    {
-      "advance_to": "14d1h",
-      "label": "trial ends, first payment attempt fails",
-      "events": [
+          },
+          "type": "customer.subscription.created"
+        },
         {
-          "id": "{{evt_3}}",
-          "type": "invoice.payment_failed",
-          "created": "{{t+14d1h}}",
+          "id": "{{evt_5}}",
+          "created": "{{t+0d}}",
           "data": {
             "object": {
               "id": "{{in_1}}",
               "object": "invoice",
-              "status": "open",
-              "customer": "{{cus_1}}",
-              "subscription": "{{sub_1}}",
-              "amount_due": 3000,
+              "amount_due": 0,
               "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_create",
               "currency": "usd",
-              "attempt_count": 1,
-              "next_payment_attempt": "{{t+17d1h}}",
-              "billing_reason": "subscription_cycle"
-            }
-          }
-        },
-        {
-          "id": "{{evt_4}}",
-          "type": "customer.subscription.updated",
-          "created": "{{t+14d1h}}",
-          "data": {
-            "object": {
-              "id": "{{sub_1}}",
-              "object": "subscription",
-              "status": "past_due",
               "customer": "{{cus_1}}",
-              "current_period_start": "{{t+14d}}",
-              "current_period_end": "{{t+44d}}",
-              "trial_start": "{{t+0d}}",
-              "trial_end": "{{t+14d}}",
-              "cancel_at_period_end": false,
-              "items": {
-                "data": [
-                  {
-                    "id": "{{si_1}}",
-                    "quantity": 1,
-                    "price": {
-                      "id": "{{price_1}}",
-                      "product": "{{prod_1}}",
-                      "recurring": {
-                        "interval": "month"
-                      }
-                    }
-                  }
-                ]
-              }
+              "next_payment_attempt": null,
+              "status": "paid"
             }
-          }
+          },
+          "type": "invoice.payment_succeeded"
         }
       ],
       "api_responses": [
@@ -177,15 +166,290 @@
             "body": {
               "id": "{{sub_1}}",
               "object": "subscription",
-              "status": "past_due"
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "trialing",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
             }
           }
         }
       ],
       "entitlements": {
-        "teams": true,
         "api": true,
-        "projects": 10
+        "projects": 10,
+        "teams": true
+      }
+    },
+    {
+      "advance_to": "11d",
+      "label": "three days before the trial ends",
+      "events": [
+        {
+          "id": "{{evt_6}}",
+          "created": "{{t+11d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "trialing",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          },
+          "type": "customer.subscription.trial_will_end"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "trialing",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "api": true,
+        "projects": 10,
+        "teams": true
+      }
+    },
+    {
+      "advance_to": "14d1h",
+      "label": "trial ends, first payment attempt fails",
+      "events": [
+        {
+          "id": "{{evt_7}}",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+14d1h}}",
+              "status": "draft"
+            }
+          },
+          "type": "invoice.created"
+        },
+        {
+          "id": "{{evt_8}}",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "active",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          },
+          "type": "customer.subscription.updated"
+        },
+        {
+          "id": "{{evt_9}}",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 0,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+14d1h}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.finalized"
+        },
+        {
+          "id": "{{evt_10}}",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "past_due",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          },
+          "type": "customer.subscription.updated"
+        },
+        {
+          "id": "{{evt_11}}",
+          "created": "{{t+14d1h}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 1,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+15d20h49m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "past_due",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "api": true,
+        "projects": 10,
+        "teams": true
       }
     },
     {
@@ -193,121 +457,489 @@
       "label": "grace period expires on the second failed attempt",
       "events": [
         {
-          "id": "{{evt_5}}",
-          "type": "invoice.payment_failed",
+          "id": "{{evt_12}}",
           "created": "{{t+17d1h}}",
           "data": {
             "object": {
-              "id": "{{in_1}}",
+              "id": "{{in_2}}",
               "object": "invoice",
-              "status": "open",
-              "customer": "{{cus_1}}",
-              "subscription": "{{sub_1}}",
               "amount_due": 3000,
               "amount_paid": 0,
-              "currency": "usd",
               "attempt_count": 2,
-              "next_payment_attempt": null,
-              "billing_reason": "subscription_cycle"
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+17d14h31m}}",
+              "status": "open"
             }
-          }
+          },
+          "type": "invoice.payment_failed"
         }
       ],
-      "api_responses": [],
-      "entitlements": {
-        "teams": false,
-        "api": false,
-        "projects": 0
-      }
-    },
-    {
-      "advance_to": "28d",
-      "label": "subscription cancelled after retries are exhausted",
-      "events": [
+      "api_responses": [
         {
-          "id": "{{evt_6}}",
-          "type": "customer.subscription.deleted",
-          "created": "{{t+28d}}",
-          "data": {
-            "object": {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
               "id": "{{sub_1}}",
               "object": "subscription",
-              "status": "canceled",
-              "customer": "{{cus_1}}",
-              "canceled_at": "{{t+28d}}",
-              "ended_at": "{{t+28d}}",
               "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
               "items": {
                 "data": [
                   {
                     "id": "{{si_1}}",
-                    "quantity": 1,
                     "price": {
                       "id": "{{price_1}}",
                       "product": "{{prod_1}}",
                       "recurring": {
                         "interval": "month"
                       }
-                    }
+                    },
+                    "quantity": 1
                   }
                 ]
-              }
+              },
+              "status": "past_due",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
             }
           }
         }
       ],
-      "api_responses": [],
       "entitlements": {
-        "teams": false,
-        "api": false,
-        "projects": 0
+        "api": true,
+        "projects": 10,
+        "teams": true
       }
     },
     {
-      "advance_to": "30d",
+      "advance_to": "28d",
+      "label": "retries continue, access holds",
+      "events": [
+        {
+          "id": "{{evt_13}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 3,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+19d10h44m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_14}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 4,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+21d3h55m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_15}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 5,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+22d22h41m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_16}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 6,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+24d17h58m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_17}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 7,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+26d11h1m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_18}}",
+          "created": "{{t+28d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 8,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": "{{t+28d1h1m}}",
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "past_due",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "api": true,
+        "projects": 10,
+        "teams": true
+      }
+    },
+    {
+      "advance_to": "31d",
+      "label": "retries exhausted, subscription cancelled",
+      "events": [
+        {
+          "id": "{{evt_19}}",
+          "created": "{{t+31d}}",
+          "data": {
+            "object": {
+              "id": "{{in_2}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 0,
+              "attempt_count": 9,
+              "billing_reason": "subscription_cycle",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "open"
+            }
+          },
+          "type": "invoice.payment_failed"
+        },
+        {
+          "id": "{{evt_20}}",
+          "created": "{{t+31d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": "{{t+28d1h1m}}",
+              "customer": "{{cus_1}}",
+              "ended_at": "{{t+28d1h1m}}",
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "canceled",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          },
+          "type": "customer.subscription.deleted"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": "{{t+28d1h1m}}",
+              "customer": "{{cus_1}}",
+              "ended_at": "{{t+28d1h1m}}",
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "canceled",
+              "trial_end": "{{t+14d}}",
+              "trial_start": "{{t+0d}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "api": false,
+        "projects": 0,
+        "teams": false
+      }
+    },
+    {
+      "advance_to": "34d",
       "label": "customer fixes their card and resubscribes",
       "events": [
         {
-          "id": "{{evt_7}}",
-          "type": "customer.subscription.created",
-          "created": "{{t+30d}}",
+          "id": "{{evt_21}}",
+          "created": "{{t+34d}}",
+          "data": {
+            "object": {
+              "id": "{{in_3}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 3000,
+              "attempt_count": 1,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.finalized"
+        },
+        {
+          "id": "{{evt_22}}",
+          "created": "{{t+34d}}",
+          "data": {
+            "object": {
+              "id": "{{in_3}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 3000,
+              "attempt_count": 1,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.paid"
+        },
+        {
+          "id": "{{evt_23}}",
+          "created": "{{t+34d}}",
           "data": {
             "object": {
               "id": "{{sub_2}}",
               "object": "subscription",
-              "status": "active",
-              "customer": "{{cus_1}}",
-              "current_period_start": "{{t+30d}}",
-              "current_period_end": "{{t+60d}}",
-              "trial_start": null,
-              "trial_end": null,
               "cancel_at_period_end": false,
               "canceled_at": null,
+              "customer": "{{cus_1}}",
               "ended_at": null,
               "items": {
                 "data": [
                   {
                     "id": "{{si_2}}",
-                    "quantity": 1,
                     "price": {
                       "id": "{{price_1}}",
                       "product": "{{prod_1}}",
                       "recurring": {
                         "interval": "month"
                       }
-                    }
+                    },
+                    "quantity": 1
                   }
                 ]
-              }
+              },
+              "status": "active",
+              "trial_end": null,
+              "trial_start": null
+            }
+          },
+          "type": "customer.subscription.created"
+        },
+        {
+          "id": "{{evt_24}}",
+          "created": "{{t+34d}}",
+          "data": {
+            "object": {
+              "id": "{{in_3}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 3000,
+              "attempt_count": 1,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.created"
+        },
+        {
+          "id": "{{evt_25}}",
+          "created": "{{t+34d}}",
+          "data": {
+            "object": {
+              "id": "{{in_3}}",
+              "object": "invoice",
+              "amount_due": 3000,
+              "amount_paid": 3000,
+              "attempt_count": 1,
+              "billing_reason": "subscription_create",
+              "currency": "usd",
+              "customer": "{{cus_1}}",
+              "next_payment_attempt": null,
+              "status": "paid"
+            }
+          },
+          "type": "invoice.payment_succeeded"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscriptions/{{sub_2}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{sub_2}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_2}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "active",
+              "trial_end": null,
+              "trial_start": null
             }
           }
         }
       ],
-      "api_responses": [],
       "entitlements": {
-        "teams": true,
         "api": true,
-        "projects": 10
+        "projects": 10,
+        "teams": true
       }
     }
   ]

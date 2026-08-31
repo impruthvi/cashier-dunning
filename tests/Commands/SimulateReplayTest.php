@@ -29,7 +29,7 @@ it('replays the shipped scenario and exits zero', function () {
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
         ->expectsOutputToContain('replayed with no Stripe account')
         ->expectsOutputToContain('trial ends, first payment attempt fails')
-        ->expectsOutputToContain('All 25 assertions passed.')
+        ->expectsOutputToContain('All 46 assertions passed.')
         ->assertSuccessful();
 });
 
