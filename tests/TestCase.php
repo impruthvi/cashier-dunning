@@ -6,6 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Impruthvi\CashierDunning\CashierDunningServiceProvider;
+use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\TrackDunning;
 use Impruthvi\CashierDunning\Tests\Support\User;
 use Laravel\Cashier\Cashier;
@@ -40,6 +41,10 @@ class TestCase extends Orchestra
 
         // The application-side dunning policy the replay tests assert against.
         Event::listen(WebhookReceived::class, [TrackDunning::class, 'handle']);
+
+        // An application that emails on failed payments, used to show what a
+        // chaos run can see that an ordered run cannot.
+        Event::listen(WebhookReceived::class, [DunningMailer::class, 'handle']);
     }
 
     protected function defineDatabaseMigrations(): void
@@ -77,6 +82,11 @@ class TestCase extends Orchestra
             $table->timestamp('trial_ends_at')->nullable();
             $table->timestamp('ends_at')->nullable();
             $table->timestamps();
+        });
+
+        Schema::create('handled_webhooks', function (Blueprint $table) {
+            $table->id();
+            $table->string('event_id')->index();
         });
 
         Schema::create('subscription_items', function (Blueprint $table) {

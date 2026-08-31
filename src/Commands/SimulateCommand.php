@@ -3,9 +3,13 @@
 namespace Impruthvi\CashierDunning\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel;
+use Impruthvi\CashierDunning\Chaos\ChaosReport;
+use Impruthvi\CashierDunning\Chaos\ChaosRunner;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\Exceptions\UnsafeKey;
@@ -80,7 +84,18 @@ class SimulateCommand extends Command
 
         $this->writeJsonReport($report);
 
-        return $report->passed() ? self::SUCCESS : self::FAILURE;
+        if (! $report->passed()) {
+            return self::FAILURE;
+        }
+
+        // Chaos runs after the ordered pass, not instead of it. A timeline that
+        // does not work in the order Stripe sent it has a plainer problem than
+        // ordering, and reporting the harder failure first would bury it.
+        if ($this->option('shuffle') || $this->option('duplicate')) {
+            return $this->chaos($fixture);
+        }
+
+        return self::SUCCESS;
     }
 
     /**
@@ -185,6 +200,61 @@ class SimulateCommand extends Command
         $this->newLine();
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Replay the same timeline under orderings Stripe is entitled to use.
+     *
+     * Stripe guarantees at-least-once delivery and no ordering; almost nobody
+     * tests against that, because live Stripe cannot be asked to deliver
+     * today's events backwards. A fixture can.
+     */
+    private function chaos(Fixture $fixture): int
+    {
+        $seed = $this->option('seed');
+        $seed = is_numeric($seed) ? (int) $seed : random_int(1, 999999);
+
+        $report = (new ChaosRunner(
+            $this->runner(),
+            $this->laravel->make(Dispatcher::class),
+            $this->laravel->make('db')->connection(),
+        ))->run(
+            fixture: $fixture,
+            shuffle: (bool) $this->option('shuffle'),
+            duplicate: (bool) $this->option('duplicate'),
+            seed: $seed,
+            iterations: max(1, (int) $this->option('iterations')),
+        );
+
+        $this->renderChaos($report);
+
+        return $report->passed() ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function renderChaos(ChaosReport $report): void
+    {
+        $this->line('  <options=bold>Chaos</>  same events, orders Stripe is entitled to use');
+        $this->newLine();
+
+        foreach ($report->passes as $pass) {
+            $marker = match (true) {
+                $pass->notApplicable => '<fg=gray>n/a</>',
+                $pass->passed() => '<fg=green>ok</>',
+                default => '<fg=red>FAIL</>',
+            };
+
+            $this->line("  {$marker}  pass {$pass->pass}: {$pass->ordering}");
+
+            foreach ($pass->divergences as $divergence) {
+                $this->line("        <fg=red>{$divergence}</>");
+            }
+        }
+
+        $this->newLine();
+        $this->line($report->passed()
+            ? '  <fg=green>PASS</>  '.$report->verdict()
+            : '  <fg=red>FAIL</>  '.$report->verdict());
+        $this->newLine();
     }
 
     private function writeJsonReport(ReplayReport $report): void

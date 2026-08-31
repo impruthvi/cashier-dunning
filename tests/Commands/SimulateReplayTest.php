@@ -1,6 +1,7 @@
 <?php
 
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
 afterEach(fn () => CashierDunning::flush());
@@ -74,4 +75,44 @@ it('explains how to register a billable before running anything', function () {
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
         ->expectsOutputToContain('createBillableUsing')
         ->assertFailed();
+});
+
+it('runs chaos passes when asked and reports the seed', function () {
+    registerReplayApp();
+
+    $this->artisan('billing:simulate', [
+        'scenario' => 'trial-dunning-cancel-reactivate',
+        '--shuffle' => true,
+        '--iterations' => 2,
+        '--seed' => 99,
+    ])
+        ->expectsOutputToContain('same events, orders Stripe is entitled to use')
+        ->expectsOutputToContain('pass 1: shuffled')
+        ->assertSuccessful();
+});
+
+it('catches an application that acts twice on a redelivered event', function () {
+    // Stripe delivers at least once. Live Stripe cannot be asked to redeliver
+    // on demand, so almost nobody tests this — and the application still ends
+    // the run with a perfectly correct subscription row.
+    registerReplayApp();
+    DunningMailer::$deduplicate = false;
+
+    $this->artisan('billing:simulate', [
+        'scenario' => 'trial-dunning-cancel-reactivate',
+        '--duplicate' => true,
+        '--iterations' => 1,
+        '--seed' => 7,
+    ])
+        ->expectsOutputToContain('mail:jenny@example.com')
+        ->expectsOutputToContain('--seed=7')
+        ->assertFailed();
+});
+
+it('does not run chaos passes unless asked', function () {
+    registerReplayApp();
+
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->doesntExpectOutputToContain('orders Stripe is entitled to use')
+        ->assertSuccessful();
 });
