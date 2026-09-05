@@ -141,6 +141,41 @@ it('catches an application that acts twice on a redelivered event', function () 
         ->assertFailed();
 });
 
+it('shows the failing step and event when a chaos replay itself fails', function () {
+    $factoryCalls = 0;
+    CashierDunning::createBillableUsing(function () use (&$factoryCalls): User {
+        $factoryCalls++;
+
+        return User::factory()->create([
+            'name' => $factoryCalls === 1 ? 'Jenny' : 'Broken chaos billable',
+            'stripe_id' => 'cus_replay1',
+        ]);
+    });
+
+    registerDunningPolicy();
+    $policy = CashierDunning::entitlementResolver();
+    CashierDunning::resolveEntitlementsUsing(
+        fn (User $billable): array => $billable->name === 'Broken chaos billable'
+            ? ['teams' => false, 'api' => false, 'projects' => 0]
+            : $policy->resolve($billable)
+    );
+
+    // The ordered command pass succeeds. The next factory call belongs to the
+    // chaos baseline and deliberately returns an application state that fails
+    // at step zero, reproducing the formerly context-free "FAIL pass 0" output.
+    $this->artisan('billing:simulate', [
+        'scenario' => 'trial-dunning-cancel-reactivate',
+        '--shuffle' => true,
+        '--iterations' => 1,
+        '--seed' => 7,
+    ])
+        ->expectsOutputToContain('FAIL  pass 0: in order')
+        ->expectsOutputToContain('FAIL +0d  trial starts')
+        ->expectsOutputToContain('customer.subscription.created')
+        ->expectsOutputToContain('feature')
+        ->assertFailed();
+});
+
 it('does not run chaos passes unless asked', function () {
     registerReplayApp();
 

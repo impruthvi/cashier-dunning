@@ -245,6 +245,13 @@ class SimulateCommand extends Command
 
             $this->line("  {$marker}  pass {$pass->pass}: {$pass->ordering}");
 
+            if (! $pass->report->passed()) {
+                (new TimelineRenderer(
+                    $this->output,
+                    (bool) $this->option('explain'),
+                ))->renderFailures($pass->report);
+            }
+
             foreach ($pass->divergences as $divergence) {
                 $this->line("        <fg=red>{$divergence}</>");
             }

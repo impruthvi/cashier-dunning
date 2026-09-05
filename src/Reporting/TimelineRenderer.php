@@ -41,6 +41,26 @@ final readonly class TimelineRenderer
         $this->line('');
     }
 
+    /**
+     * Render why an embedded replay failed without repeating its full header
+     * and verdict. Chaos already names the pass and owns the final verdict; it
+     * needs the failed timeline rows that explain the red pass marker.
+     */
+    public function renderFailures(ReplayReport $report): void
+    {
+        $failures = $report->failures();
+
+        if ($failures === []) {
+            $this->line('        <fg=red>'.$report->verdict().'</>');
+
+            return;
+        }
+
+        foreach ($failures as $step) {
+            $this->renderStep($step);
+        }
+    }
+
     private function renderStep(StepResult $step): void
     {
         $this->line(sprintf(

@@ -48,6 +48,15 @@ function render(ReplayReport $report, bool $decorated, bool $explain = false): s
     return $output->fetch();
 }
 
+function renderFailures(ReplayReport $report): string
+{
+    $output = new BufferedOutput;
+
+    (new TimelineRenderer($output))->renderFailures($report);
+
+    return $output->fetch();
+}
+
 it('marks steps with symbols in a terminal', function () {
     expect(render(passingReport(), decorated: true))->toContain('✓');
 });
@@ -111,4 +120,20 @@ it('shows why the application answered badly', function () {
     ], assertions: 1, completed: false);
 
     expect(render($report, decorated: false))->toContain('The application answered 500.');
+});
+
+it('renders failed timeline rows without repeating the report wrapper', function () {
+    $output = renderFailures(divergingReport());
+
+    expect($output)->toContain('FAIL +14d1h  payment fails')
+        ->and($output)->toContain('invoice.payment_failed')
+        ->and($output)->toContain('teams     true          false')
+        ->and($output)->not->toContain('demo  replayed with no Stripe account')
+        ->and($output)->not->toContain('1 step(s) did not match');
+});
+
+it('renders the report verdict when failure has no step to show', function () {
+    $report = new ReplayReport('empty', [], assertions: 0, completed: false);
+
+    expect(renderFailures($report))->toContain('No assertions ran.');
 });
