@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Database\Eloquent\Model;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Laravel\Cashier\Cashier;
@@ -42,6 +43,7 @@ final class SimulationEnvironment
     public function __construct(
         private readonly Repository $config,
         private readonly ?ClientInterface $httpClient = null,
+        private readonly ?string $expectedBillableStripeId = null,
     ) {}
 
     /**
@@ -121,7 +123,7 @@ final class SimulationEnvironment
                 throw SimulationFailed::billableFactoryReturnedNonObject(get_debug_type($billable));
             }
 
-            return $billable;
+            return $this->validatedBillable($billable);
         }
 
         // Cashier keeps the billable model in a static, not in configuration.
@@ -129,7 +131,7 @@ final class SimulationEnvironment
 
         if (method_exists($model, 'factory')) {
             try {
-                return $model::factory()->create();
+                $billable = $model::factory()->create();
             } catch (Throwable $e) {
                 throw new SimulationFailed(
                     "Could not build a billable from [{$model}] using its factory: ".
@@ -138,8 +140,47 @@ final class SimulationEnvironment
                     previous: $e
                 );
             }
+
+            return $this->validatedBillable($billable);
         }
 
         throw SimulationFailed::noBillable();
+    }
+
+    private function validatedBillable(object $billable): object
+    {
+        if ($this->expectedBillableStripeId === null) {
+            return $billable;
+        }
+
+        $stripeId = method_exists($billable, 'stripeId')
+            ? $billable->stripeId()
+            : null;
+
+        if (! is_string($stripeId) || $stripeId !== $this->expectedBillableStripeId) {
+            throw SimulationFailed::billableStripeIdDoesNotMatch(
+                $billable::class,
+                $this->expectedBillableStripeId,
+                is_string($stripeId) ? $stripeId : null,
+            );
+        }
+
+        $resolved = Cashier::findBillable($this->expectedBillableStripeId);
+
+        if (! $this->isSameBillable($billable, $resolved)) {
+            throw SimulationFailed::billableResolvedToDifferentRecord(
+                $billable::class,
+                $this->expectedBillableStripeId,
+            );
+        }
+
+        return $billable;
+    }
+
+    private function isSameBillable(object $billable, mixed $resolved): bool
+    {
+        return $billable instanceof Model
+            && $resolved instanceof Model
+            && $billable->is($resolved);
     }
 }

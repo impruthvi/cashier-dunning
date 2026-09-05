@@ -5,6 +5,7 @@ use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\User;
 use Laravel\Cashier\Cashier;
+use Laravel\Cashier\Events\WebhookReceived;
 
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
@@ -95,6 +96,51 @@ it('explains how to register a billable before running anything', function () {
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
         ->expectsOutputToContain('createBillableUsing')
         ->assertFailed();
+});
+
+it('rejects the fallback factory billable before delivering a webhook when it has no stripe id', function () {
+    CashierDunning::flush();
+    $webhooks = 0;
+    Event::listen(WebhookReceived::class, function () use (&$webhooks): void {
+        $webhooks++;
+    });
+
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->expectsOutputToContain('no stripe_id')
+        ->assertFailed();
+
+    expect($webhooks)->toBe(0);
+    $this->assertDatabaseCount('users', 0);
+});
+
+it('rejects a billable with a different replay customer id before delivering a webhook', function () {
+    $webhooks = 0;
+    Event::listen(WebhookReceived::class, function () use (&$webhooks): void {
+        $webhooks++;
+    });
+    CashierDunning::createBillableUsing(fn () => User::factory()->create([
+        'stripe_id' => 'cus_wrong',
+    ]));
+
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->expectsOutputToContain('fixture webhooks target stripe_id [cus_replay1]')
+        ->assertFailed();
+
+    expect($webhooks)->toBe(0);
+    $this->assertDatabaseCount('users', 0);
+});
+
+it('rejects duplicate replay residue when Cashier resolves a different billable', function () {
+    $existing = User::factory()->create(['stripe_id' => 'cus_replay1']);
+    CashierDunning::createBillableUsing(fn () => User::factory()->create([
+        'stripe_id' => 'cus_replay1',
+    ]));
+
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->expectsOutputToContain('Cashier::findBillable() returned a different record')
+        ->assertFailed();
+
+    expect(User::pluck('id')->all())->toBe([$existing->id]);
 });
 
 it('runs CLI shuffle from a fresh database with a fresh billable per pass', function () {

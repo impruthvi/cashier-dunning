@@ -33,6 +33,31 @@ class SimulationFailed extends RuntimeException
         );
     }
 
+    public static function billableStripeIdDoesNotMatch(
+        string $type,
+        string $expectedStripeId,
+        ?string $actualStripeId,
+    ): self {
+        $actual = $actualStripeId === null
+            ? 'no stripe_id'
+            : "stripe_id [{$actualStripeId}]";
+
+        return new self(
+            "The billable factory returned [{$type}] with {$actual}, but fixture ".
+            "webhooks target stripe_id [{$expectedStripeId}]. Create and save the ".
+            'billable with that replay ID in CashierDunning::createBillableUsing().'
+        );
+    }
+
+    public static function billableResolvedToDifferentRecord(string $type, string $stripeId): self
+    {
+        return new self(
+            "The billable factory created [{$type}] with stripe_id [{$stripeId}], ".
+            'but Cashier::findBillable() returned a different record. Ensure the '.
+            'replay stripe_id is unique and remove rows left by an earlier replay.'
+        );
+    }
+
     public static function afterCommitCallbacksCannotBeObserved(int $count): self
     {
         $callbacks = $count === 1 ? 'callback' : 'callbacks';

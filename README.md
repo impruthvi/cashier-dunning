@@ -109,6 +109,11 @@ CashierDunning::createBillableUsing(fn () => User::factory()->create([
 ]));
 ```
 
+Before delivering any webhook, the command verifies that Cashier resolves
+`cus_replay1` to the exact record returned by this factory. Missing, different,
+or duplicate `stripe_id` values fail with a setup error instead of producing a
+misleading entitlement mismatch.
+
 Each replay rolls back its database writes, including the factory-created user,
 on success or failure. Repeated commands start from the same database state;
 transactions already open before replay remain open.

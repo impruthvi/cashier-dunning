@@ -71,7 +71,11 @@ final readonly class ReplayRunner
         $database->beginTransaction();
 
         try {
-            $report = (new SimulationEnvironment($this->config, $client))->run(
+            $report = (new SimulationEnvironment(
+                $this->config,
+                $client,
+                (string) $placeholders->resolveString('{{cus_1}}'),
+            ))->run(
                 fn (SimulationContext $context): ReplayReport => $this->replay(
                     $fixture,
                     $context,
