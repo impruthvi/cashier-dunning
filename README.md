@@ -92,7 +92,11 @@ the attempt and refuses the delivery.
 composer require impruthvi/cashier-dunning --dev
 ```
 
-Requires PHP 8.3+, Laravel 12 or 13, and `laravel/cashier` 16.
+Requires PHP 8.3+, Laravel 11, 12 or 13, and `laravel/cashier` 16.
+
+Laravel 11 is supported on PHP 8.3 and 8.4 only. Composer would let you install
+it on 8.5, but 11.x shipped before 8.5 existed and is not tested against it
+upstream, so it is not a combination this package advertises.
 
 ## Getting started
 
