@@ -2,6 +2,7 @@
 
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Duration;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
@@ -156,7 +157,7 @@ it('is runnable again after a nested attempt is refused', function () {
 
 it('explains how to register a billable when it cannot build one', function () {
     CashierDunning::flush();
-    config()->set('cashier.model', null);
+    Cashier::useCustomerModel(Authenticatable::class);
 
     environment()->run(fn () => null);
 })->throws(SimulationFailed::class, 'createBillableUsing');

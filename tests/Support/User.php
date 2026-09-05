@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning\Tests\Support;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Cashier\Billable;
 
@@ -16,7 +17,15 @@ class User extends Authenticatable
 {
     use Billable;
 
+    /** @use HasFactory<UserFactory> */
+    use HasFactory;
+
     protected $guarded = [];
 
     public $timestamps = true;
+
+    protected static function newFactory(): UserFactory
+    {
+        return UserFactory::new();
+    }
 }

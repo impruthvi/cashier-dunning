@@ -57,9 +57,11 @@ class TestCase extends Orchestra
      * than published from Cashier so the test schema stays fixed while
      * Cashier's own migrations evolve.
      */
-    protected function createCashierTables(): void
+    protected function createCashierTables(?string $connection = null): void
     {
-        Schema::create('users', function (Blueprint $table) {
+        $schema = Schema::connection($connection);
+
+        $schema->create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
             $table->string('email')->nullable();
@@ -71,7 +73,7 @@ class TestCase extends Orchestra
             $table->timestamps();
         });
 
-        Schema::create('subscriptions', function (Blueprint $table) {
+        $schema->create('subscriptions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id');
             $table->string('type');
@@ -84,12 +86,12 @@ class TestCase extends Orchestra
             $table->timestamps();
         });
 
-        Schema::create('handled_webhooks', function (Blueprint $table) {
+        $schema->create('handled_webhooks', function (Blueprint $table) {
             $table->id();
             $table->string('event_id')->index();
         });
 
-        Schema::create('subscription_items', function (Blueprint $table) {
+        $schema->create('subscription_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('subscription_id');
             $table->string('stripe_id')->unique();

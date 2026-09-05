@@ -1,27 +1,21 @@
 <?php
 
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\User;
+use Laravel\Cashier\Cashier;
 
-afterEach(fn () => CashierDunning::flush());
+beforeEach(fn () => DunningMailer::reset());
+afterEach(function () {
+    CashierDunning::flush();
+    DunningMailer::reset();
+});
 
 function registerReplayApp(): void
 {
-    $user = User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
-
-    CashierDunning::createBillableUsing(fn () => $user);
-    CashierDunning::resolveEntitlementsUsing(function (User $billable): array {
-        $billable->refresh();
-        $subscription = $billable->subscriptions()->where('type', 'default')->latest('id')->first();
-
-        $entitled = $subscription !== null
-            && ! $billable->dunning_exhausted
-            && $subscription->ends_at === null
-            && in_array($subscription->stripe_status, ['trialing', 'active', 'past_due'], true);
-
-        return ['teams' => $entitled, 'api' => $entitled, 'projects' => $entitled ? 10 : 0];
-    });
+    billableUser();
+    registerDunningPolicy();
 }
 
 it('replays the shipped scenario and exits zero', function () {
@@ -32,6 +26,28 @@ it('replays the shipped scenario and exits zero', function () {
         ->expectsOutputToContain('trial ends, first payment attempt fails')
         ->expectsOutputToContain('All 46 assertions passed.')
         ->assertSuccessful();
+});
+
+it('replays the same scenario twice on one database with a fresh billable per run', function () {
+    registerReplayApp();
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
+
+    // No database refresh or factory re-registration between commands: this is
+    // the second invocation a developer makes after the first green replay.
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->expectsOutputToContain('All 46 assertions passed.')
+        ->assertSuccessful();
+
+    $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
+        ->expectsOutputToContain('All 46 assertions passed.')
+        ->assertSuccessful();
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
 });
 
 it('exits non-zero when the application does not match the recording', function () {
@@ -72,23 +88,39 @@ it('names the scenarios it does have when asked for one it does not', function (
 });
 
 it('explains how to register a billable before running anything', function () {
+    // The normal test billable now has a factory; this case needs a model
+    // without one to exercise the missing-factory diagnostic.
+    Cashier::useCustomerModel(Authenticatable::class);
+
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
         ->expectsOutputToContain('createBillableUsing')
         ->assertFailed();
 });
 
-it('runs chaos passes when asked and reports the seed', function () {
+it('runs CLI shuffle from a fresh database with a fresh billable per pass', function () {
     registerReplayApp();
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
 
     $this->artisan('billing:simulate', [
         'scenario' => 'trial-dunning-cancel-reactivate',
         '--shuffle' => true,
         '--iterations' => 2,
-        '--seed' => 99,
+        '--seed' => 7,
     ])
+        ->expectsOutputToContain('All 46 assertions passed.')
         ->expectsOutputToContain('same events, orders Stripe is entitled to use')
-        ->expectsOutputToContain('pass 1: shuffled')
+        ->expectsOutputToContain('ok  pass 0: in order')
+        ->expectsOutputToContain('ok  pass 1: shuffled')
+        ->expectsOutputToContain('ok  pass 2: shuffled')
+        ->expectsOutputToContain('The application behaved identically across 3 ordering(s).')
         ->assertSuccessful();
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
 });
 
 it('catches an application that acts twice on a redelivered event', function () {

@@ -93,12 +93,18 @@ final readonly class ChaosRunner
         $ledger = new SideEffectLedger($this->events);
         $ledger->listen();
 
+        // ReplayRunner also isolates its billable's connection. When it is
+        // this connection, its transaction is deliberately a nested savepoint.
+        // Keep the pass boundary for the explicitly supplied chaos connection.
+        $transactionLevel = $this->database->transactionLevel();
         $this->database->beginTransaction();
 
         try {
             $report = $this->runner->run($fixture, $startingAt, $orderer, $pass);
         } finally {
-            $this->database->rollBack();
+            while ($this->database->transactionLevel() > $transactionLevel) {
+                $this->database->rollBack();
+            }
         }
 
         $last = $report->steps === [] ? null : $report->steps[count($report->steps) - 1];

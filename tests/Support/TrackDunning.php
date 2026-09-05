@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning\Tests\Support;
 
+use Laravel\Cashier\Cashier;
 use Laravel\Cashier\Events\WebhookReceived;
 
 /**
@@ -25,10 +26,9 @@ class TrackDunning
         $object = $payload['data']['object'] ?? [];
 
         $user = match ($payload['type'] ?? null) {
-            'invoice.payment_failed', 'customer.subscription.created' => User::where(
-                'stripe_id',
+            'invoice.payment_failed', 'customer.subscription.created' => Cashier::findBillable(
                 $object['customer'] ?? null
-            )->first(),
+            ),
             default => null,
         };
 

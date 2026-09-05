@@ -7,20 +7,14 @@ use Impruthvi\CashierDunning\Tests\TestCase;
 uses(TestCase::class)->in(__DIR__);
 
 /**
- * A billable whose Stripe id matches the one placeholders resolve to, so
- * Cashier's webhook controller can find it.
+ * Register the README's factory-per-call setup. Creating a billable here and
+ * capturing it would hide collisions between consecutive replay invocations.
  */
-function billableUser(): User
+function billableUser(): void
 {
-    $user = User::create([
-        'name' => 'Jenny',
-        'email' => 'jenny@example.com',
+    CashierDunning::createBillableUsing(fn () => User::factory()->create([
         'stripe_id' => 'cus_replay1',
-    ]);
-
-    CashierDunning::createBillableUsing(fn () => $user);
-
-    return $user;
+    ]));
 }
 
 /**

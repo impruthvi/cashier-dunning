@@ -6,6 +6,7 @@ use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
+use Impruthvi\CashierDunning\Tests\Support\User;
 
 afterEach(fn () => CashierDunning::flush());
 
@@ -41,19 +42,29 @@ it('drives Cashier to the state real Stripe ended in', function () {
     // Real Stripe cancelled the subscription during the sixth step, not the
     // fifth — the hand-authored timeline guessed wrong about when Stripe gives
     // up, and the recording corrected it.
-    $user = billableUser();
+    billableUser();
     registerDunningPolicy();
 
-    (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    $policy = CashierDunning::entitlementResolver();
+    $subscriptions = [];
+    CashierDunning::resolveEntitlementsUsing(function (User $user) use ($policy, &$subscriptions): array {
+        $subscriptions = $user->subscriptions()->reorder('id')->get();
+
+        return $policy->resolve($user);
+    });
+
+    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
         (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );
 
-    $subscriptions = $user->subscriptions()->reorder('id')->get();
-
-    expect($subscriptions)->toHaveCount(2)
+    expect($report->passed())->toBeTrue()
+        ->and($subscriptions)->toHaveCount(2)
         ->and($subscriptions[0]->stripe_status)->toBe('canceled')
         ->and($subscriptions[1]->stripe_status)->toBe('active');
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
 });
 
 it('carries only events the scenario declared', function () {

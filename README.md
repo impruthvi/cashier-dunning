@@ -109,6 +109,17 @@ CashierDunning::createBillableUsing(fn () => User::factory()->create([
 ]));
 ```
 
+Each replay rolls back its database writes, including the factory-created user,
+on success or failure. Repeated commands start from the same database state;
+transactions already open before replay remain open.
+
+Isolation uses the connection of Cashier's configured customer model
+(`Cashier::useCustomerModel(...)`). Your factory and billing writes must use that
+same connection. Writes to other connections and external effects such as email
+are outside this rollback guarantee. Application code must not commit the
+simulation's transaction. With `--record`, local verification writes roll back,
+but resources created in the Stripe test account remain there.
+
 ### Entitlements
 
 The interesting question is not what Stripe did — it is what your application

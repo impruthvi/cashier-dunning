@@ -74,11 +74,25 @@ it('numbers placeholders densely so a reviewer can tell the plans apart', functi
 });
 
 it('drives Cashier onto the smaller plan', function () {
-    replayDowngrade();
+    billableUser();
+    registerPlanLimits();
 
-    $subscription = User::first()
-        ->subscriptions()->where('type', 'default')->first();
+    $policy = CashierDunning::entitlementResolver();
+    $subscription = null;
+    CashierDunning::resolveEntitlementsUsing(function (User $user) use ($policy, &$subscription): array {
+        $subscription = $user->subscriptions()->where('type', 'default')->first();
 
-    expect($subscription->stripe_status)->toBe('active')
+        return $policy->resolve($user);
+    });
+
+    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))
+        ->run(downgradeFixture(), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+
+    expect($report->passed())->toBeTrue()
+        ->and($subscription)->not->toBeNull()
+        ->and($subscription->stripe_status)->toBe('active')
         ->and($subscription->stripe_price)->toBe('price_replay2');
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
 });

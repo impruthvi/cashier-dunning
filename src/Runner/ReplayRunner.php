@@ -16,6 +16,7 @@ use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
+use Laravel\Cashier\Cashier;
 use Throwable;
 
 /**
@@ -58,17 +59,32 @@ final readonly class ReplayRunner
         $placeholders = new Placeholders($startedAt);
         $client = new FixtureHttpClient($fixture, $placeholders);
 
-        return (new SimulationEnvironment($this->config, $client))->run(
-            fn (SimulationContext $context): ReplayReport => $this->replay(
-                $fixture,
-                $context,
-                $client,
-                $placeholders,
-                $orderer ?? EventOrderer::inOrder(),
-                $pass,
-            ),
-            $startedAt
-        );
+        // Resolve before the environment invokes the billable factory: its
+        // INSERT must be isolated too. Cashier uses this same model to find
+        // customers, and it may declare a non-default database connection.
+        $model = Cashier::$customerModel;
+        $database = (new $model)->getConnection();
+        $transactionLevel = $database->transactionLevel();
+        $database->beginTransaction();
+
+        try {
+            return (new SimulationEnvironment($this->config, $client))->run(
+                fn (SimulationContext $context): ReplayReport => $this->replay(
+                    $fixture,
+                    $context,
+                    $client,
+                    $placeholders,
+                    $orderer ?? EventOrderer::inOrder(),
+                    $pass,
+                ),
+                $startedAt
+            );
+        } finally {
+            // A replay is a question, not a migration. Restore our entry
+            // level, including any nested transaction application code left
+            // open, without rolling back a caller-owned transaction.
+            $database->rollBack($transactionLevel);
+        }
     }
 
     private function replay(

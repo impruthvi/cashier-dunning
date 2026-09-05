@@ -41,20 +41,32 @@ it('replays the shipped dunning fixture end to end with no Stripe account', func
 it('drives real Cashier state through the whole lifecycle', function () use ($start) {
     // Not a simulation of Cashier: these are rows Cashier's own webhook
     // controller wrote, in response to events it verified the signature of.
-    $user = billableUser();
+    billableUser();
     registerDunningPolicy();
 
-    runner()->run(shippedDunningFixture(), $start);
+    // Observe real rows while replay is running; they are rolled back before
+    // the report is returned. Keep the normal entitlement policy in place.
+    $policy = CashierDunning::entitlementResolver();
+    $subscriptions = [];
+    CashierDunning::resolveEntitlementsUsing(function (User $user) use ($policy, &$subscriptions): array {
+        // Cashier sorts by created_at, which is identical for these rows.
+        $subscriptions = $user->subscriptions()->reorder('id')->get();
 
-    // reorder(), because Cashier's relation already sorts by created_at desc
-    // and every subscription here was created in the same simulated second.
-    $subscriptions = $user->subscriptions()->reorder('id')->get();
+        return $policy->resolve($user);
+    });
 
-    expect($subscriptions)->toHaveCount(2)
+    $report = runner()->run(shippedDunningFixture(), $start);
+
+    expect($report->passed())->toBeTrue()
+        ->and($subscriptions)->toHaveCount(2)
         ->and($subscriptions[0]->stripe_id)->toBe('sub_replay1')
         ->and($subscriptions[0]->stripe_status)->toBe('canceled')
         ->and($subscriptions[1]->stripe_id)->toBe('sub_replay2')
         ->and($subscriptions[1]->stripe_status)->toBe('active');
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
 });
 
 it('attributes each entitlement change to the event that caused it', function () use ($start) {
@@ -142,6 +154,10 @@ it('fails when the application revokes access too early', function () use ($star
         // than meaningful.
         ->and($report->failures()[0]->mismatches)
         ->toContain('teams: recording says true, application says false');
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('subscriptions', 0);
+    $this->assertDatabaseCount('subscription_items', 0);
 });
 
 it('stops at the first failing step', function () use ($start) {
