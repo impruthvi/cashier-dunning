@@ -3,6 +3,7 @@
 namespace Impruthvi\CashierDunning\Runner;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
@@ -11,9 +12,11 @@ use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
 use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
+use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
+use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Laravel\Cashier\Cashier;
@@ -68,7 +71,7 @@ final readonly class ReplayRunner
         $database->beginTransaction();
 
         try {
-            return (new SimulationEnvironment($this->config, $client))->run(
+            $report = (new SimulationEnvironment($this->config, $client))->run(
                 fn (SimulationContext $context): ReplayReport => $this->replay(
                     $fixture,
                     $context,
@@ -79,12 +82,21 @@ final readonly class ReplayRunner
                 ),
                 $startedAt
             );
+
+            $pendingCallbacks = $this->afterCommitGuard()
+                ->callbacksDiscardedByRollback($database, $transactionLevel);
         } finally {
             // A replay is a question, not a migration. Restore our entry
             // level, including any nested transaction application code left
             // open, without rolling back a caller-owned transaction.
             $database->rollBack($transactionLevel);
         }
+
+        if ($pendingCallbacks > 0) {
+            throw SimulationFailed::afterCommitCallbacksCannotBeObserved($pendingCallbacks);
+        }
+
+        return $report;
     }
 
     private function replay(
@@ -247,5 +259,12 @@ final readonly class ReplayRunner
         $prefix = $this->config->get('cashier.path');
 
         return '/'.trim(is_string($prefix) ? $prefix : 'stripe', '/').'/webhook';
+    }
+
+    private function afterCommitGuard(): AfterCommitGuard
+    {
+        $transactions = Container::getInstance()->make('db.transactions');
+
+        return new AfterCommitGuard($transactions);
     }
 }

@@ -120,6 +120,10 @@ are outside this rollback guarantee. Application code must not commit the
 simulation's transaction. With `--record`, local verification writes roll back,
 but resources created in the Stripe test account remain there.
 
+Laravel work scheduled with `->afterCommit()` cannot execute inside a replay
+that never commits. The command detects those callbacks and exits with a named
+failure instead of reporting that unseen side effects behaved correctly.
+
 ### Entitlements
 
 The interesting question is not what Stripe did — it is what your application

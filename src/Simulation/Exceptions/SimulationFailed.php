@@ -32,4 +32,17 @@ class SimulationFailed extends RuntimeException
             'model the subscription belongs to.'
         );
     }
+
+    public static function afterCommitCallbacksCannotBeObserved(int $count): self
+    {
+        $callbacks = $count === 1 ? 'callback' : 'callbacks';
+
+        return new self(
+            'The replay scheduled after-commit work that could not be observed '.
+            "({$count} {$callbacks}). ".
+            'Cashier Dunning rolls back its database transaction, so Laravel '.
+            'will discard that work without dispatching it. No success verdict '.
+            'was reported because its side effects could not be verified.'
+        );
+    }
 }
