@@ -3,7 +3,6 @@
 namespace Impruthvi\CashierDunning\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
@@ -216,7 +215,6 @@ class SimulateCommand extends Command
 
         $report = (new ChaosRunner(
             $this->runner(),
-            $this->laravel->make(Dispatcher::class),
             $this->laravel->make('db')->connection(),
         ))->run(
             fixture: $fixture,

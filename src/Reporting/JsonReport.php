@@ -30,6 +30,8 @@ final readonly class JsonReport
             'assertions' => $report->assertions,
             'events_delivered' => $report->eventsDelivered(),
             'completed' => $report->completed,
+            'side_effects' => $report->sideEffects,
+            'blocked_deliveries' => $report->blockedDeliveries,
             'steps' => array_map(self::step(...), $report->steps),
         ];
     }

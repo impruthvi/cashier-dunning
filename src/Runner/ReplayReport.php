@@ -13,12 +13,20 @@ namespace Impruthvi\CashierDunning\Runner;
  */
 final readonly class ReplayReport
 {
-    /** @param list<StepResult> $steps */
+    /**
+     * @param  list<StepResult>  $steps
+     * @param  array<string, int>  $sideEffects  what the application tried to do to the
+     *                                           outside world, counted by kind
+     * @param  int  $blockedDeliveries  how many of those attempts the replay refused to
+     *                                  complete
+     */
     public function __construct(
         public string $scenario,
         public array $steps,
         public int $assertions,
         public bool $completed,
+        public array $sideEffects = [],
+        public int $blockedDeliveries = 0,
     ) {}
 
     public function passed(): bool

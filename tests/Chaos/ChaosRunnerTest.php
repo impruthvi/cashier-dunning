@@ -1,7 +1,6 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
@@ -25,7 +24,6 @@ function chaos(bool $shuffle, bool $duplicate, int $iterations = 2): ChaosReport
 
     return (new ChaosRunner(
         new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)),
-        app(Dispatcher::class),
         app('db')->connection(),
     ))->run(
         fixture: (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
@@ -99,7 +97,6 @@ it('reports a shuffle over single-event steps as not applicable', function () {
 
     $report = (new ChaosRunner(
         new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)),
-        app(Dispatcher::class),
         app('db')->connection(),
     ))->run($fixture, shuffle: true, duplicate: false, seed: 1, iterations: 2);
 

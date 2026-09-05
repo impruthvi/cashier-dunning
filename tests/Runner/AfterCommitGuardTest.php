@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
-use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Event;
@@ -82,7 +81,6 @@ it('fails direct chaos runs instead of returning a false clean report', function
     try {
         (new ChaosRunner(
             new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)),
-            app(EventDispatcher::class),
             $database,
         ))->run(
             (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),

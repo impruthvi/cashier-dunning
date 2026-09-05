@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Tests\Support;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Laravel\Cashier\Billable;
 
 /**
@@ -19,6 +20,11 @@ class User extends Authenticatable
 
     /** @use HasFactory<UserFactory> */
     use HasFactory;
+
+    // Every application's User has this and Laravel's base class does not, so
+    // a replay that never notified would not be exercising the door most
+    // dunning policies actually use.
+    use Notifiable;
 
     protected $guarded = [];
 

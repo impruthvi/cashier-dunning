@@ -2,14 +2,10 @@
 
 namespace Impruthvi\CashierDunning\Chaos;
 
-use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Mail\Events\MessageSending;
-use Illuminate\Notifications\Events\NotificationSending;
-use Illuminate\Queue\Events\JobQueued;
-use Symfony\Component\Mime\Address;
+use Impruthvi\CashierDunning\Guards\OutboundGuard;
 
 /**
- * Records what an application did to the outside world during a replay.
+ * Records what an application tried to do to the outside world during a replay.
  *
  * Idempotency bugs hide in final state. An application that emails a customer
  * twice, or dispatches a dunning job twice, ends the run with a perfectly
@@ -18,56 +14,45 @@ use Symfony\Component\Mime\Address;
  * therefore find nothing, which is exactly why most billing test suites believe
  * their handlers are idempotent.
  *
- * Effects are collected by listening rather than by faking. Laravel's fakes
- * change what the application does — a faked queue never runs the handler that
- * contains the bug — and this way the run is the real one.
+ * The ledger only writes down what it is told. Observation and interception both
+ * live in {@see OutboundGuard}, so one place decides which effects a replay is
+ * allowed to complete.
  */
 final class SideEffectLedger
 {
     /** @var list<string> */
     private array $entries = [];
 
-    private bool $listening = false;
-
-    public function __construct(private readonly Dispatcher $events) {}
-
-    public function listen(): void
-    {
-        if ($this->listening) {
-            return;
-        }
-
-        $this->listening = true;
-
-        $this->events->listen(JobQueued::class, function (JobQueued $event): void {
-            $this->entries[] = 'job:'.(is_object($event->job) ? $event->job::class : (string) $event->job);
-        });
-
-        $this->events->listen(MessageSending::class, function (MessageSending $event): void {
-            // Recipients, not indexes. An entry reading "mail:0" tells whoever
-            // is reading a failure nothing about who got the second email.
-            $recipients = array_map(
-                static fn (Address $address): string => $address->getAddress(),
-                $event->message->getTo()
-            );
-
-            $this->entries[] = 'mail:'.implode(',', $recipients);
-        });
-
-        $this->events->listen(NotificationSending::class, function (NotificationSending $event): void {
-            $this->entries[] = 'notification:'.$event->notification::class;
-        });
-    }
+    private int $blocked = 0;
 
     public function record(string $entry): void
     {
         $this->entries[] = $entry;
     }
 
+    /**
+     * An effect the application attempted and the replay refused to complete.
+     *
+     * Counted as well as recorded. The signature says the application tried to
+     * mail the customer twice; this says nobody was actually mailed, which is
+     * the sentence a developer running the command on a laptop with live SMTP
+     * credentials needs to read.
+     */
+    public function recordBlocked(string $entry): void
+    {
+        $this->entries[] = $entry;
+        $this->blocked++;
+    }
+
     /** @return list<string> */
     public function entries(): array
     {
         return $this->entries;
+    }
+
+    public function blocked(): int
+    {
+        return $this->blocked;
     }
 
     /**

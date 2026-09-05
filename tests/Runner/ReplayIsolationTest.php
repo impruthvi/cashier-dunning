@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\DB;
 use Impruthvi\CashierDunning\CashierDunning;
@@ -43,7 +42,7 @@ it('preserves caller transactions and existing billing rows', function (bool $ch
         $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
         $report = $chaos
-            ? (new ChaosRunner($runner, app(Dispatcher::class), $database))
+            ? (new ChaosRunner($runner, $database))
                 ->run($fixture, shuffle: true, duplicate: false, seed: 7, iterations: 2)
             : $runner->run($fixture);
 

@@ -67,20 +67,24 @@ event on demand, or to send today's webhooks backwards. A fixture is a list, and
 lists can be rearranged:
 
 ```
-$ php artisan billing:simulate trial-dunning-cancel-reactivate --duplicate --seed=7
+$ php artisan billing:simulate trial-dunning-cancel-reactivate --duplicate --seed=7 --iterations=1
+
+  ...ordered pass first, then:
 
   Chaos  same events, orders Stripe is entitled to use
 
   ok    pass 0: in order
   FAIL  pass 1: duplicated
-        [mail:jenny@example.com] happened 9 time(s) in order and 18 time(s) duplicated
+        [mail:replay@example.test] happened 9 time(s) in order and 18 time(s) duplicated
 
   FAIL  1 ordering(s) changed the outcome. Reproduce with --seed=7.
 ```
 
 That application ends the run with a **perfectly correct subscription row**. Its
-only defect is that nine customers received two emails — which is why comparing
-final state, the thing most billing test suites do, would call it idempotent.
+only defect is that it would have emailed the customer twice for each of nine
+failed payments — which is why comparing final state, the thing most billing test
+suites do, would call it idempotent. No mail left the building: replay records
+the attempt and refuses the delivery.
 
 ## Installation
 
@@ -106,8 +110,14 @@ use Impruthvi\CashierDunning\CashierDunning;
 
 CashierDunning::createBillableUsing(fn () => User::factory()->create([
     'stripe_id' => 'cus_replay1',
+    'email' => 'replay@example.test',
 ]));
 ```
+
+Pin the email too, not only the `stripe_id`. Side effects are keyed by recipient,
+so a factory leaving the email to Faker gives every chaos pass a different
+address and turns every comparison into a divergence that is really just a
+different random string.
 
 Before delivering any webhook, the command verifies that Cashier resolves
 `cus_replay1` to the exact record returned by this factory. Missing, different,
@@ -120,10 +130,45 @@ transactions already open before replay remain open.
 
 Isolation uses the connection of Cashier's configured customer model
 (`Cashier::useCustomerModel(...)`). Your factory and billing writes must use that
-same connection. Writes to other connections and external effects such as email
-are outside this rollback guarantee. Application code must not commit the
-simulation's transaction. With `--record`, local verification writes roll back,
-but resources created in the Stripe test account remain there.
+same connection. Writes to other connections are outside this rollback guarantee.
+Application code must not commit the simulation's transaction. With `--record`,
+local verification writes roll back, but resources created in the Stripe test
+account remain there.
+
+### A replay never mails a real customer
+
+Replay posts a real `invoice.payment_failed` through your real webhook route, so
+your real dunning listener runs — and a dunning listener's whole job is to email
+the customer. On a machine with working SMTP credentials that email would be
+sent, to whatever address your billable carries.
+
+So the run is real right up to the last hop. Your listener runs, the mailable is
+built, the recipients are resolved, the attempt is recorded — and the delivery is
+refused. Every replay prints what your application tried to do:
+
+```
+$ php artisan billing:simulate trial-dunning-cancel-reactivate
+
+  ...
+
+  Side effects  what the application did
+      mail:replay@example.test  ×9
+      9 outbound delivery(s) blocked. A replay never mails a real customer.
+
+  PASS  All 46 assertions passed.
+```
+
+This is deliberately not `Mail::fake()`. A fake swaps the mailer out, so a
+listener that formats a message wrongly never formats it at all — and the bug you
+came to find stops being reachable. Mail and notifications are intercepted at
+Laravel's own `MessageSending` and `NotificationSending` seams, after your code
+has finished doing everything it does.
+
+**The limit:** queued work is observed but not blocked. `JobQueued` fires after
+the push has already happened, so a replay on a queue connection other than
+`sync` leaves a real job in a real queue, to be run later against data the replay
+has since rolled back. Run replays with `QUEUE_CONNECTION=sync` if your dunning
+work is queued.
 
 Laravel work scheduled with `->afterCommit()` cannot execute inside a replay
 that never commits. The command detects those callbacks and exits with a named

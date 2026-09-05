@@ -36,6 +36,8 @@ final readonly class TimelineRenderer
             $this->renderStep($step);
         }
 
+        $this->renderSideEffects($report);
+
         $this->line('');
         $this->renderVerdict($report);
         $this->line('');
@@ -126,6 +128,40 @@ final readonly class TimelineRenderer
         }
 
         $this->line('');
+    }
+
+    /**
+     * What the application tried to do to the outside world, and what was
+     * stopped.
+     *
+     * Shown on passing runs too, not only failing ones. "Your app emailed the
+     * customer three times during this timeline" is information whether or not
+     * the entitlements matched, and the reader has no other way to see it.
+     *
+     * The blocked count is a separate line because it answers a different
+     * question — not "what did my app do" but "did any of that reach a real
+     * person" — and that is the question somebody running this on a laptop with
+     * production SMTP credentials needs answered without reading the source.
+     */
+    private function renderSideEffects(ReplayReport $report): void
+    {
+        if ($report->sideEffects === []) {
+            return;
+        }
+
+        $this->line('');
+        $this->line('  <options=bold>Side effects</>  what the application did');
+
+        foreach ($report->sideEffects as $effect => $count) {
+            $this->line(sprintf('      <fg=gray>%s</>  ×%d', $effect, $count));
+        }
+
+        if ($report->blockedDeliveries > 0) {
+            $this->line(sprintf(
+                '      <fg=yellow>%d outbound delivery(s) blocked. A replay never mails a real customer.</>',
+                $report->blockedDeliveries,
+            ));
+        }
     }
 
     private function renderVerdict(ReplayReport $report): void

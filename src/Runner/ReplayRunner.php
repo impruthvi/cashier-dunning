@@ -7,12 +7,14 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
+use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
 use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
+use Impruthvi\CashierDunning\Guards\OutboundGuard;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
@@ -70,21 +72,30 @@ final readonly class ReplayRunner
         $transactionLevel = $database->transactionLevel();
         $database->beginTransaction();
 
+        $ledger = new SideEffectLedger;
+
         try {
-            $report = (new SimulationEnvironment(
-                $this->config,
-                $client,
-                (string) $placeholders->resolveString('{{cus_1}}'),
-            ))->run(
-                fn (SimulationContext $context): ReplayReport => $this->replay(
-                    $fixture,
-                    $context,
+            // Every replay is observed and every outbound delivery is refused,
+            // including the plain path. Replay drives the application's real
+            // dunning listeners, and those exist to email customers.
+            $report = $this->outboundGuard()->protect(
+                $ledger,
+                fn (): ReplayReport => (new SimulationEnvironment(
+                    $this->config,
                     $client,
-                    $placeholders,
-                    $orderer ?? EventOrderer::inOrder(),
-                    $pass,
-                ),
-                $startedAt
+                    (string) $placeholders->resolveString('{{cus_1}}'),
+                ))->run(
+                    fn (SimulationContext $context): ReplayReport => $this->replay(
+                        $fixture,
+                        $context,
+                        $client,
+                        $placeholders,
+                        $orderer ?? EventOrderer::inOrder(),
+                        $pass,
+                        $ledger,
+                    ),
+                    $startedAt
+                )
             );
 
             $pendingCallbacks = $this->afterCommitGuard()
@@ -110,6 +121,7 @@ final readonly class ReplayRunner
         Placeholders $placeholders,
         EventOrderer $orderer,
         int $pass,
+        SideEffectLedger $ledger,
     ): ReplayReport {
         $delivery = new WebhookDelivery(
             $this->kernel,
@@ -152,6 +164,8 @@ final readonly class ReplayRunner
             steps: $results,
             assertions: $assertions,
             completed: $completed,
+            sideEffects: $ledger->signature(),
+            blockedDeliveries: $ledger->blocked(),
         );
     }
 
@@ -270,5 +284,15 @@ final readonly class ReplayRunner
         $transactions = Container::getInstance()->make('db.transactions');
 
         return new AfterCommitGuard($transactions);
+    }
+
+    /**
+     * Resolved from the container rather than constructed, because the guard
+     * registers event listeners once and then arms and disarms them. A fresh
+     * instance per replay would stack a new set on every run.
+     */
+    private function outboundGuard(): OutboundGuard
+    {
+        return Container::getInstance()->make(OutboundGuard::class);
     }
 }

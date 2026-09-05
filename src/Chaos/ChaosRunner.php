@@ -3,7 +3,6 @@
 namespace Impruthvi\CashierDunning\Chaos;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionInterface;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -26,7 +25,6 @@ final readonly class ChaosRunner
 {
     public function __construct(
         private ReplayRunner $runner,
-        private Dispatcher $events,
         private ConnectionInterface $database,
     ) {}
 
@@ -90,9 +88,6 @@ final readonly class ChaosRunner
      */
     private function pass(Fixture $fixture, EventOrderer $orderer, int $pass, CarbonImmutable $startingAt): PassResult
     {
-        $ledger = new SideEffectLedger($this->events);
-        $ledger->listen();
-
         // ReplayRunner also isolates its billable's connection. When it is
         // this connection, its transaction is deliberately a nested savepoint.
         // Keep the pass boundary for the explicitly supplied chaos connection.
@@ -113,7 +108,7 @@ final readonly class ChaosRunner
             pass: $pass,
             ordering: $orderer->describe(),
             report: $report,
-            sideEffects: $ledger->signature(),
+            sideEffects: $report->sideEffects,
             finalEntitlements: $last instanceof StepResult ? $last->actualEntitlements : [],
         );
     }
