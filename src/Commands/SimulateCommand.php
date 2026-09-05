@@ -23,6 +23,7 @@ use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Laravel\Cashier\Cashier;
+use Symfony\Component\Console\Output\OutputInterface;
 
 class SimulateCommand extends Command
 {
@@ -79,7 +80,7 @@ class SimulateCommand extends Command
             return self::FAILURE;
         }
 
-        (new TimelineRenderer($this->output, (bool) $this->option('explain')))->render($report);
+        (new TimelineRenderer($this->display(), (bool) $this->option('explain')))->render($report);
 
         $this->writeJsonReport($report);
 
@@ -119,15 +120,15 @@ class SimulateCommand extends Command
             return self::FAILURE;
         }
 
-        $this->newLine();
-        $this->line("  Recording <options=bold>{$scenario->name}</> against Stripe test mode");
-        $this->newLine();
+        $this->write('');
+        $this->write("  Recording <options=bold>{$scenario->name}</> against Stripe test mode");
+        $this->write('');
 
         foreach ($scenario->describeActions() as $action) {
-            $this->line("  {$action}");
+            $this->write("  {$action}");
         }
 
-        $this->newLine();
+        $this->write('');
 
         try {
             ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
@@ -148,7 +149,7 @@ class SimulateCommand extends Command
         // looks like coverage. Nothing reaches disk until it has worked once.
         if (! $report->passed()) {
             $this->components->error('The recording could not be replayed, so it was not written.');
-            (new TimelineRenderer($this->output))->render($report);
+            (new TimelineRenderer($this->display()))->render($report);
 
             return self::FAILURE;
         }
@@ -157,9 +158,9 @@ class SimulateCommand extends Command
 
         FixtureFile::write($fixture, $path);
 
-        $this->line("  Wrote <options=bold>{$path}</>");
-        $this->line('  '.count($fixture->eventTypes()).' event(s) across '.count($fixture->steps).' step(s), replayed clean.');
-        $this->newLine();
+        $this->write("  Wrote <options=bold>{$path}</>");
+        $this->write('  '.count($fixture->eventTypes()).' event(s) across '.count($fixture->steps).' step(s), replayed clean.');
+        $this->write('');
 
         return self::SUCCESS;
     }
@@ -188,15 +189,15 @@ class SimulateCommand extends Command
             return self::FAILURE;
         }
 
-        $this->newLine();
-        $this->line('  <options=bold>Available scenarios</>');
-        $this->newLine();
+        $this->write('');
+        $this->write('  <options=bold>Available scenarios</>');
+        $this->write('');
 
         foreach ($scenarios as $scenario) {
-            $this->line("  billing:simulate {$scenario}");
+            $this->write("  billing:simulate {$scenario}");
         }
 
-        $this->newLine();
+        $this->write('');
 
         return self::SUCCESS;
     }
@@ -205,8 +206,11 @@ class SimulateCommand extends Command
      * Replay the same timeline under orderings Stripe is entitled to use.
      *
      * Stripe guarantees at-least-once delivery and no ordering; almost nobody
-     * tests against that, because live Stripe cannot be asked to deliver
-     * today's events backwards. A fixture can.
+     * tests against that, because live Stripe cannot be asked to redeliver an
+     * event or to reshuffle the ones it sent at a single moment. A fixture can.
+     *
+     * Within a step, not across steps — see EventOrderer for why that
+     * distinction is load-bearing rather than an implementation detail.
      */
     private function chaos(Fixture $fixture): int
     {
@@ -231,35 +235,41 @@ class SimulateCommand extends Command
 
     private function renderChaos(ChaosReport $report): void
     {
-        $this->line('  <options=bold>Chaos</>  same events, orders Stripe is entitled to use');
-        $this->newLine();
+        $this->write('  <options=bold>Chaos</>  same events, orders Stripe is entitled to use');
+        $this->write('');
 
         foreach ($report->passes as $pass) {
-            $marker = match (true) {
-                $pass->notApplicable => '<fg=gray>n/a</>',
-                $pass->passed() => '<fg=green>ok</>',
-                default => '<fg=red>FAIL</>',
+            // Padded inside the colour tags, so "ok", "n/a" and "FAIL" occupy
+            // the same width and the pass column keeps a straight left edge.
+            // A ragged edge costs the reader the vertical scan the marks exist
+            // to provide, which is the whole point of a column of verdicts.
+            [$word, $colour] = match (true) {
+                $pass->notApplicable => ['n/a', 'gray'],
+                $pass->passed() => ['ok', 'green'],
+                default => ['FAIL', 'red'],
             };
 
-            $this->line("  {$marker}  pass {$pass->pass}: {$pass->ordering}");
+            $marker = sprintf('<fg=%s>%s</>', $colour, str_pad($word, 4));
+
+            $this->write("  {$marker}  pass {$pass->pass}: {$pass->ordering}");
 
             if (! $pass->report->passed()) {
                 (new TimelineRenderer(
-                    $this->output,
+                    $this->display(),
                     (bool) $this->option('explain'),
                 ))->renderFailures($pass->report);
             }
 
             foreach ($pass->divergences as $divergence) {
-                $this->line("        <fg=red>{$divergence}</>");
+                $this->write("        <fg=red>{$divergence}</>");
             }
         }
 
-        $this->newLine();
-        $this->line($report->passed()
+        $this->write('');
+        $this->write($report->passed()
             ? '  <fg=green>PASS</>  '.$report->verdict()
             : '  <fg=red>FAIL</>  '.$report->verdict());
-        $this->newLine();
+        $this->write('');
     }
 
     private function writeJsonReport(ReplayReport $report): void
@@ -272,8 +282,8 @@ class SimulateCommand extends Command
 
         JsonReport::write($report, $path);
 
-        $this->line("  Report written to <options=bold>{$path}</>");
-        $this->newLine();
+        $this->write("  Report written to <options=bold>{$path}</>");
+        $this->write('');
     }
 
     private function runner(): ReplayRunner
@@ -283,6 +293,25 @@ class SimulateCommand extends Command
             $this->laravel->make(Kernel::class),
             $this->laravel->make(EntitlementResolver::class),
         );
+    }
+
+    /**
+     * The raw console stream, not Laravel's OutputStyle.
+     *
+     * `OutputStyle` collapses runs of spaces, so every aligned column and every
+     * indent this command builds arrives at the terminal as single-spaced text.
+     * The renderer's whole job is a readable timeline, and its own tests write
+     * to a plain `BufferedOutput` — so the suite saw alignment the CLI could not
+     * produce, and the published examples were captured from the suite.
+     */
+    private function display(): OutputInterface
+    {
+        return $this->output->getOutput();
+    }
+
+    private function write(string $line): void
+    {
+        $this->display()->writeln($line);
     }
 
     private function stripeKey(): ?string

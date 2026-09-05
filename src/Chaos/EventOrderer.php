@@ -5,14 +5,22 @@ namespace Impruthvi\CashierDunning\Chaos;
 /**
  * Rearranges a step's events to model what Stripe actually promises.
  *
- * Stripe guarantees at-least-once delivery and says plainly that it does not
- * guarantee order — "a subscription might be deleted before the corresponding
- * creation event arrives". Almost no application is tested against that,
- * because live Stripe cannot be asked to misbehave on demand: you cannot tell it
- * to deliver today's events backwards, or to deliver one twice.
+ * Stripe guarantees at-least-once delivery and does not guarantee order. Almost
+ * no application is tested against either, because live Stripe cannot be asked
+ * to misbehave on demand. A fixture is a list you control, so replay can.
  *
- * A fixture is a list you control, so replay can. This is the one thing replay
- * does that a live integration test cannot do at all.
+ * The scope is one step, deliberately and permanently as written. A step is one
+ * position on the clock, so permuting inside it models the events Stripe emitted
+ * at effectively the same moment — which is where ordering bugs live, and which
+ * no ordering guarantee covers.
+ *
+ * It does NOT reorder across steps. Stripe's documentation offers "a
+ * subscription might be deleted before the corresponding creation event arrives"
+ * as the extreme case; in the shipped fixture those two events sit six clock
+ * positions apart, and `apply()` only ever sees one step's list. Quoting that
+ * sentence as this class's justification would be describing an ordering it
+ * cannot produce. Crossing a clock advance is a separate design question — which
+ * orderings are physically possible once time has moved — and is unanswered.
  *
  * Orderings are derived from a seed rather than from `shuffle()`, so a failing
  * pass can be reproduced exactly — including on another machine and another PHP

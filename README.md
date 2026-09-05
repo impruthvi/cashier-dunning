@@ -25,51 +25,92 @@ $ php artisan billing:simulate trial-dunning-cancel-reactivate --explain
 
   trial-dunning-cancel-reactivate  replayed with no Stripe account
 
-  ✓ +0d      trial starts
+  ok   +0d  trial starts
+      invoice.finalized  200
+      invoice.created  200
+      invoice.paid  200
       customer.subscription.created  200
-        teams: false -> true (at customer.subscription.created)
+        api: false -> true (at customer.subscription.created)
         projects: 0 -> 10 (at customer.subscription.created)
-  ✓ +11d     three days before the trial ends
+        teams: false -> true (at customer.subscription.created)
+      invoice.payment_succeeded  200
+  ok   +11d  three days before the trial ends
       customer.subscription.trial_will_end  200
-  ✓ +14d1h   trial ends, first payment attempt fails
+  ok   +14d1h  trial ends, first payment attempt fails
+      invoice.created  200
+      customer.subscription.updated  200
+      invoice.finalized  200
       customer.subscription.updated  200
       invoice.payment_failed  200
-  ✓ +17d1h   grace period expires on the second failed attempt
+  ok   +17d1h  grace period expires on the second failed attempt
       invoice.payment_failed  200
-  ✓ +28d     retries continue, access holds
-      invoice.payment_failed  200          (×6)
-  ✓ +31d     retries exhausted, subscription cancelled
+  ok   +28d  retries continue, access holds
       invoice.payment_failed  200
-        teams: true -> false (at invoice.payment_failed)
+      invoice.payment_failed  200
+      invoice.payment_failed  200
+      invoice.payment_failed  200
+      invoice.payment_failed  200
+      invoice.payment_failed  200
+  ok   +31d  retries exhausted, subscription cancelled
+      invoice.payment_failed  200
+        api: true -> false (at invoice.payment_failed)
         projects: 10 -> 0 (at invoice.payment_failed)
+        teams: true -> false (at invoice.payment_failed)
       customer.subscription.deleted  200
-  ✓ +34d     customer fixes their card and resubscribes
+  ok   +34d  customer fixes their card and resubscribes
+      invoice.finalized  200
+      invoice.paid  200
       customer.subscription.created  200
+        api: false -> true (at customer.subscription.created)
+        projects: 0 -> 10 (at customer.subscription.created)
         teams: false -> true (at customer.subscription.created)
+      invoice.created  200
+      invoice.payment_succeeded  200
+
+  Side effects  what the application did
+      mail:replay@example.test  ×9
+      9 outbound delivery(s) blocked. A replay never mails a real customer.
 
   PASS  All 46 assertions passed.
 ```
 
-*(Abridged: the real run also delivers the `invoice.created`, `invoice.finalized`,
-`invoice.paid` and `invoice.payment_succeeded` events Stripe emits alongside
-these — 25 events across 7 steps.)*
+*(Captured from a real run. In a terminal the `ok` column is a green `✓`;
+piped to a file or a CI log it degrades to words, which is what you see here.)*
 
 Thirty-four days of billing. No Stripe account. Sub-second.
 
 ## The part live Stripe cannot test
 
-Stripe guarantees **at-least-once delivery** and states plainly that it does
-**not guarantee order** — a subscription may be deleted before the event that
-created it arrives.
+Stripe guarantees **at-least-once delivery** and does not guarantee order.
+Almost nobody tests against either, because you cannot ask Stripe to redeliver
+an event on demand, or to deliver a step's events in a different sequence. A
+fixture is a list you own, so replay can.
 
-Almost nobody tests against that, because you cannot ask Stripe to redeliver an
-event on demand, or to send today's webhooks backwards. A fixture is a list, and
-lists can be rearranged:
+**What this actually does, precisely:** a fixture step is one position on the
+clock — the events Stripe emitted at effectively the same moment. `--shuffle`
+permutes the events *within* a step. `--duplicate` delivers every event a second
+time, appended after the originals, the way a Stripe redelivery arrives. Both
+are seeded, so a failing pass reproduces exactly.
+
+**What it does not do:** move an event across a step boundary. Stripe's own
+documentation offers "a subscription might be deleted before the corresponding
+creation event arrives" as the extreme case, and this package cannot produce
+that ordering — in the shipped fixture `customer.subscription.created` is at
+step 0 and `customer.subscription.deleted` is at step 5, six clock positions
+apart, and the orderer never crosses that gap. Reordering across a clock advance
+is a real design question about which orderings are physically possible, and it
+is not answered here.
+
+Within a step is where the ordering bugs actually live. Step 2 of the shipped
+fixture delivers `invoice.created`, two `customer.subscription.updated` and
+`invoice.payment_failed` at one timestamp; nothing about Stripe's contract says
+which lands first, and an application that only works in the recorded sequence
+is broken:
 
 ```
 $ php artisan billing:simulate trial-dunning-cancel-reactivate --duplicate --seed=7 --iterations=1
 
-  ...ordered pass first, then:
+  (the ordered pass runs first and prints its own timeline, then:)
 
   Chaos  same events, orders Stripe is entitled to use
 
@@ -153,7 +194,7 @@ refused. Every replay prints what your application tried to do:
 ```
 $ php artisan billing:simulate trial-dunning-cancel-reactivate
 
-  ...
+  (timeline omitted — see above)
 
   Side effects  what the application did
       mail:replay@example.test  ×9
@@ -211,11 +252,29 @@ watching before any entitlements exist.
 ### When a replay disagrees with the recording
 
 ```
+$ php artisan billing:simulate downgrade-over-usage-limit
+
+  downgrade-over-usage-limit  replayed with no Stripe account
+
+  FAIL +0d  subscribed to the larger plan
+      invoice.created  200
+      invoice.finalized  200
+      invoice.paid  200
+      invoice.payment_succeeded  200
+      customer.subscription.created  200
+
         feature   recording     application
-        teams     true          false
-        api       true          —
-        projects  10            3
+        api       true          true
+        projects  25            10
+
+
+  FAIL  1 step(s) did not match the recording, starting at step 0 (subscribed to the larger plan).
 ```
+
+Every webhook returned 200. The subscription row is correct. The application
+simply grants 10 projects on a plan the recording says is worth 25 — a limit
+that drifted out of step with billing, which no amount of checking HTTP status
+codes would surface. The command exits non-zero.
 
 Every declared feature is shown, not only the differing ones — a single red line
 reads as a glitch, while the same line among green ones reads as "everything
@@ -242,6 +301,28 @@ php artisan billing:simulate <scenario> --record
 # what can this installation do, offline
 php artisan billing:doctor
 ```
+
+`billing:doctor` answers "will this work here" without running anything:
+
+```
+$ php artisan billing:doctor
+
+  cashier-dunning environment check
+
+  ✓ Stripe key: not set. Fine for replay; recording needs a test key.
+  ✓ Cashier billable model: App\Models\User
+  ! Webhook secret: not set. Cashier skips signature verification, so replay cannot prove your signature handling works.
+  ✓ Entitlement resolver: closure registered in code
+  ✓ 2 fixture(s) valid in /app/vendor/impruthvi/cashier-dunning/fixtures
+  ✓ Scenario [trial-dunning-cancel-reactivate]: recorded.
+  ✓ Scenario [downgrade-over-usage-limit]: recorded.
+
+  Replay  works with no Stripe account, key or network.
+  Record  blocked: no key configured.
+```
+
+*(The fixtures path is wherever Composer installed the package; the absolute
+path above is shortened.)*
 
 ## Recording your own
 

@@ -14,6 +14,8 @@ use Impruthvi\CashierDunning\Runner\StepResult;
  * The baseline is the recording in the order Stripe happened to deliver it.
  * Every other pass is the same events under an order Stripe is equally entitled
  * to use, because it guarantees at-least-once delivery and no ordering at all.
+ * "Equally entitled" is bounded by what EventOrderer can produce: permutation
+ * within one step, and redelivery. Not reordering across a clock advance.
  *
  * A pass fails if the application ends up entitled to something different, or
  * if it did a different number of things to the outside world. The second half

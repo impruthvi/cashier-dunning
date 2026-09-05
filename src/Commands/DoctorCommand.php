@@ -33,9 +33,9 @@ class DoctorCommand extends Command
 
     public function handle(): int
     {
-        $this->newLine();
-        $this->line('  <options=bold>cashier-dunning</> environment check');
-        $this->newLine();
+        $this->write('');
+        $this->write('  <options=bold>cashier-dunning</> environment check');
+        $this->write('');
 
         $mode = $this->checkStripeKey();
         $this->checkCashier();
@@ -44,12 +44,12 @@ class DoctorCommand extends Command
         $this->checkFixtures();
         $this->checkScenarios();
 
-        $this->newLine();
-        $this->line('  <options=bold>Replay</>  works with no Stripe account, key or network.');
-        $this->line('  <options=bold>Record</>  '.($mode->canRecord()
+        $this->write('');
+        $this->write('  <options=bold>Replay</>  works with no Stripe account, key or network.');
+        $this->write('  <options=bold>Record</>  '.($mode->canRecord()
             ? 'ready.'
             : 'blocked: '.$mode->describe().'.'));
-        $this->newLine();
+        $this->write('');
 
         return $this->failed ? self::FAILURE : self::SUCCESS;
     }
@@ -194,17 +194,26 @@ class DoctorCommand extends Command
 
     private function ok(string $message): void
     {
-        $this->line("  <fg=green>✓</> {$message}");
+        $this->write("  <fg=green>✓</> {$message}");
     }
 
     private function caution(string $message): void
     {
-        $this->line("  <fg=yellow>!</> {$message}");
+        $this->write("  <fg=yellow>!</> {$message}");
     }
 
     private function problem(string $message): void
     {
         $this->failed = true;
-        $this->line("  <fg=red>✗</> {$message}");
+        $this->write("  <fg=red>✗</> {$message}");
+    }
+
+    /**
+     * The raw console stream, not Laravel's OutputStyle, which collapses runs
+     * of spaces and would flatten this report's two-column layout.
+     */
+    private function write(string $line): void
+    {
+        $this->output->getOutput()->writeln($line);
     }
 }

@@ -158,9 +158,9 @@ it('runs CLI shuffle from a fresh database with a fresh billable per pass', func
     ])
         ->expectsOutputToContain('All 46 assertions passed.')
         ->expectsOutputToContain('same events, orders Stripe is entitled to use')
-        ->expectsOutputToContain('ok  pass 0: in order')
-        ->expectsOutputToContain('ok  pass 1: shuffled')
-        ->expectsOutputToContain('ok  pass 2: shuffled')
+        ->expectsOutputToContain('ok    pass 0: in order')
+        ->expectsOutputToContain('ok    pass 1: shuffled')
+        ->expectsOutputToContain('ok    pass 2: shuffled')
         ->expectsOutputToContain('The application behaved identically across 3 ordering(s).')
         ->assertSuccessful();
 
