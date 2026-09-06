@@ -366,11 +366,17 @@ Stripe support will ask for.
 |---|---|
 | `trial-dunning-cancel-reactivate` | A trial ends, the card fails, retries run out, the subscription is cancelled, the customer comes back |
 | `downgrade-over-usage-limit` | A customer moves to a smaller plan mid-period and their limit drops below what they are already using |
+| `cancel-at-period-end-then-canceled-early` | A customer schedules a cancellation, Stripe cancels early, and Cashier keeps reporting the subscription as active |
 
-Both fixtures in this repository were recorded against a dedicated synthetic
-Stripe test account with invented products, so there is nothing sensitive in
-them by construction. Field-level redaction runs on write against an allowlist
-that fails closed.
+The first two fixtures were recorded against a dedicated synthetic Stripe test
+account with invented products, so there is nothing sensitive in them by
+construction. Field-level redaction runs on write against an allowlist that
+fails closed.
+
+`cancel-at-period-end-then-canceled-early` is the exception: it is hand-authored
+from Stripe's documented subscription object rather than recorded, because it
+reproduces [laravel/cashier-stripe#1791][1791] and the point is to show the
+defect without needing an account to see it. Its provenance says so.
 
 ## How it works
 
@@ -419,3 +425,5 @@ pinned. A re-recording of the same journey should produce identical bytes.
 ## License
 
 The MIT License (MIT). Please see [License File](LICENSE.md) for more information.
+
+[1791]: https://github.com/laravel/cashier-stripe/issues/1791

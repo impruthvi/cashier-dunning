@@ -1,0 +1,213 @@
+{
+  "format_version": 1,
+  "provider": "stripe",
+  "scenario": "cancel-at-period-end-then-canceled-early",
+  "provenance": {
+    "recorded_at": "2026-09-06T00:00:00+00:00",
+    "synthetic": true,
+    "source": "hand-authored from Stripe's documented subscription object, not recorded",
+    "reproduces": "https://github.com/laravel/cashier-stripe/issues/1791",
+    "stripe_api_version": "20.3.1",
+    "cashier_version": "16.8.0",
+    "php_version": "8.3",
+    "undeclared_events": {}
+  },
+  "manifest": {
+    "required_events": [
+      "customer.subscription.created",
+      "customer.subscription.updated"
+    ],
+    "optional_events": []
+  },
+  "steps": [
+    {
+      "advance_to": "0d",
+      "label": "subscription starts, paid through day 30",
+      "events": [
+        {
+          "id": "{{evt_1}}",
+          "created": "{{t+0d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": false,
+              "canceled_at": null,
+              "current_period_end": "{{t+30d}}",
+              "current_period_start": "{{t+0d}}",
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "active",
+              "trial_end": null,
+              "trial_start": null
+            }
+          },
+          "type": "customer.subscription.created"
+        }
+      ],
+      "api_responses": [],
+      "entitlements": {
+        "access": true
+      }
+    },
+    {
+      "advance_to": "10d",
+      "label": "customer asks to cancel at period end",
+      "events": [
+        {
+          "id": "{{evt_2}}",
+          "created": "{{t+10d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": true,
+              "canceled_at": "{{t+10d}}",
+              "current_period_end": "{{t+30d}}",
+              "current_period_start": "{{t+0d}}",
+              "customer": "{{cus_1}}",
+              "ended_at": null,
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "active",
+              "trial_end": null,
+              "trial_start": null
+            }
+          },
+          "type": "customer.subscription.updated"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscription_items/{{si_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{si_1}}",
+              "object": "subscription_item",
+              "current_period_end": "{{t+30d}}",
+              "current_period_start": "{{t+0d}}",
+              "price": {
+                "id": "{{price_1}}",
+                "object": "price",
+                "product": "{{prod_1}}",
+                "recurring": {
+                  "interval": "month"
+                }
+              },
+              "quantity": 1,
+              "subscription": "{{sub_1}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "access": true
+      }
+    },
+    {
+      "advance_to": "20d",
+      "label": "Stripe cancels early; the subscription no longer exists",
+      "events": [
+        {
+          "id": "{{evt_3}}",
+          "created": "{{t+20d}}",
+          "data": {
+            "object": {
+              "id": "{{sub_1}}",
+              "object": "subscription",
+              "cancel_at_period_end": true,
+              "canceled_at": "{{t+10d}}",
+              "current_period_end": "{{t+30d}}",
+              "current_period_start": "{{t+0d}}",
+              "customer": "{{cus_1}}",
+              "ended_at": "{{t+20d}}",
+              "items": {
+                "data": [
+                  {
+                    "id": "{{si_1}}",
+                    "price": {
+                      "id": "{{price_1}}",
+                      "product": "{{prod_1}}",
+                      "recurring": {
+                        "interval": "month"
+                      }
+                    },
+                    "quantity": 1
+                  }
+                ]
+              },
+              "status": "canceled",
+              "trial_end": null,
+              "trial_start": null
+            }
+          },
+          "type": "customer.subscription.updated"
+        }
+      ],
+      "api_responses": [
+        {
+          "match": {
+            "method": "GET",
+            "path": "/v1/subscription_items/{{si_1}}",
+            "body": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "{{si_1}}",
+              "object": "subscription_item",
+              "current_period_end": "{{t+30d}}",
+              "current_period_start": "{{t+0d}}",
+              "price": {
+                "id": "{{price_1}}",
+                "object": "price",
+                "product": "{{prod_1}}",
+                "recurring": {
+                  "interval": "month"
+                }
+              },
+              "quantity": 1,
+              "subscription": "{{sub_1}}"
+            }
+          }
+        }
+      ],
+      "entitlements": {
+        "access": false
+      }
+    }
+  ]
+}
