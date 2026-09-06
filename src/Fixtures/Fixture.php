@@ -133,6 +133,45 @@ final readonly class Fixture
     }
 
     /**
+     * The customer placeholder this recording drives, if there is exactly one.
+     *
+     * The billable preflight needs to know which customer the fixture's
+     * webhooks target. Reading it out of the recording is the only way to be
+     * right: assuming `{{cus_1}}` holds for the two scenarios shipped here and
+     * breaks the moment somebody records their own, which is a feature this
+     * package advertises.
+     *
+     * Null when the recording names no customer, or more than one. Neither can
+     * be checked against a single billable, so the preflight stands down rather
+     * than guessing — an absent check is better than a confident wrong one.
+     */
+    public function customerPlaceholder(): ?string
+    {
+        $found = [];
+
+        // Encoded rather than walked. `array_walk_recursive` takes its array by
+        // reference and Step is readonly, so the payloads cannot be handed to
+        // it directly — and a placeholder is a literal string wherever it
+        // appears, so scanning the encoded form finds every one of them without
+        // caring how deeply the payload nests.
+        foreach ($this->steps as $step) {
+            $encoded = json_encode([$step->events, $step->apiExchanges]);
+
+            if ($encoded === false) {
+                continue;
+            }
+
+            if (preg_match_all('/\{\{(cus_\d+)\}\}/', $encoded, $matches) > 0) {
+                foreach ($matches[1] as $id) {
+                    $found[$id] = true;
+                }
+            }
+        }
+
+        return count($found) === 1 ? '{{'.array_key_first($found).'}}' : null;
+    }
+
+    /**
      * Every required event the manifest declared must actually be present. A
      * recording that came up short is refused rather than quietly replayed.
      *

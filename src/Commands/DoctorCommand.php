@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Commands;
 
 use Illuminate\Console\Command;
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Allowlist;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
@@ -25,6 +26,8 @@ use Throwable;
  */
 class DoctorCommand extends Command
 {
+    use WritesToConsole;
+
     public $signature = 'billing:doctor';
 
     public $description = 'Check whether this application can record and replay billing scenarios';
@@ -206,14 +209,5 @@ class DoctorCommand extends Command
     {
         $this->failed = true;
         $this->write("  <fg=red>✗</> {$message}");
-    }
-
-    /**
-     * The raw console stream, not Laravel's OutputStyle, which collapses runs
-     * of spaces and would flatten this report's two-column layout.
-     */
-    private function write(string $line): void
-    {
-        $this->output->getOutput()->writeln($line);
     }
 }

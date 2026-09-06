@@ -130,14 +130,17 @@ it('rejects a billable with a different replay customer id before delivering a w
     $this->assertDatabaseCount('users', 0);
 });
 
-it('rejects duplicate replay residue when Cashier resolves a different billable', function () {
+it('names duplicate replay residue as duplicate residue', function () {
+    // Two rows sharing the id is the v0.1.0 upgrade case. Cashier's first()
+    // would succeed and silently pick one, so the run has to say what is
+    // actually wrong: there is more than one candidate, not a mismatched one.
     $existing = User::factory()->create(['stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => User::factory()->create([
         'stripe_id' => 'cus_replay1',
     ]));
 
     $this->artisan('billing:simulate trial-dunning-cancel-reactivate')
-        ->expectsOutputToContain('Cashier::findBillable() returned a different record')
+        ->expectsOutputToContain('2 customer records share stripe_id [cus_replay1]')
         ->assertFailed();
 
     expect(User::pluck('id')->all())->toBe([$existing->id]);

@@ -164,10 +164,11 @@ so a factory leaving the email to Faker gives every chaos pass a different
 address and turns every comparison into a divergence that is really just a
 different random string.
 
-Before delivering any webhook, the command verifies that Cashier resolves
-`cus_replay1` to the exact record returned by this factory. Missing, different,
-or duplicate `stripe_id` values fail with a setup error instead of producing a
-misleading entitlement mismatch.
+Before delivering any webhook, the command reads the customer id out of the
+recording and checks that it resolves to exactly the record your factory
+returned. Each way that can go wrong gets its own error — no `stripe_id`, the
+wrong one, no matching row at all, or several rows sharing it — so you are told
+what is actually broken instead of shown a red entitlement table.
 
 Each replay rolls back its database writes, including the factory-created user,
 on success or failure. Repeated commands start from the same database state;
@@ -176,11 +177,12 @@ transactions already open before replay remain open.
 Isolation uses the connection of Cashier's configured customer model
 (`Cashier::useCustomerModel(...)`). Your factory and billing writes must use that
 same connection. Writes to other connections are outside this rollback guarantee.
-Application code must not commit the simulation's transaction. With `--record`,
+Application code that commits the simulation's transaction is detected and fails
+the run rather than silently persisting. With `--record`,
 local verification writes roll back, but resources created in the Stripe test
 account remain there.
 
-### A replay never mails a real customer
+### A replay does not mail your customers
 
 Replay posts a real `invoice.payment_failed` through your real webhook route, so
 your real dunning listener runs — and a dunning listener's whole job is to email
@@ -205,15 +207,28 @@ $ php artisan billing:simulate trial-dunning-cancel-reactivate
 
 This is deliberately not `Mail::fake()`. A fake swaps the mailer out, so a
 listener that formats a message wrongly never formats it at all — and the bug you
-came to find stops being reachable. Mail and notifications are intercepted at
-Laravel's own `MessageSending` and `NotificationSending` seams, after your code
-has finished doing everything it does.
+came to find stops being reachable. Instead, every configured mailer is pointed
+at the array transport for the length of the run. Your listener runs, your
+`toMail()` runs, the message is built and the recipients resolved; it simply has
+nowhere to go. `MessageSending` still fires, so the ledger sees the attempt.
 
-**The limit:** queued work is observed but not blocked. `JobQueued` fires after
-the push has already happened, so a replay on a queue connection other than
-`sync` leaves a real job in a real queue, to be run later against data the replay
-has since rolled back. Run replays with `QUEUE_CONNECTION=sync` if your dunning
-work is queued.
+Notifications go the same way. Only channels with no mail transport behind them —
+Slack, SMS, and anything else that talks straight to a network — are refused
+outright, because there is no lower seam to stop them at.
+
+**The limit — queued work is observed, not blocked.** `JobQueued` fires *after*
+Laravel has already pushed the job, so there is nothing left to refuse. On a
+`database` queue the row is inside the replay's transaction and disappears with
+it; on Redis, SQS or Beanstalk the job survives the rollback and a worker will
+run it afterwards, against data that no longer exists. **If your dunning work is
+queued, run replays with `QUEUE_CONNECTION=sync`** — then the handler runs inline
+and its mail is caught like any other.
+
+**If your application commits.** A replay owns the transaction it opened. Code
+that calls `DB::commit()` or `DB::rollBack()` on that connection takes it away,
+and the rollback afterwards becomes a no-op that leaves real rows behind. The run
+now checks and fails with a named error rather than reporting PASS over
+persisted data.
 
 Laravel work scheduled with `->afterCommit()` cannot execute inside a replay
 that never commits. The command detects those callbacks and exits with a named

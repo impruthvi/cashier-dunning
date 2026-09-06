@@ -14,6 +14,9 @@ use Illuminate\Notifications\Notification;
  */
 class DunningNotification extends Notification
 {
+    /** How many times the application's own toMail() actually ran. */
+    public static int $built = 0;
+
     /** @return list<string> */
     public function via(object $notifiable): array
     {
@@ -22,6 +25,8 @@ class DunningNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
+        self::$built++;
+
         return (new MailMessage)->line('Your payment failed.');
     }
 }

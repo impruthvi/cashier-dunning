@@ -2,6 +2,64 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.2.1 — the safety net had holes in it - 2026-09-06
+
+v0.2.0 shipped a guard that stops a replay mailing your customers. An
+independent review of that release found two ways a replay could still reach
+past its own boundary, and one way the guard could be skipped entirely.
+
+**Upgrade from v0.2.0.** Nothing to do beyond the bump; no configuration or
+setup changes.
+
+### Fixed
+
+- **A billable factory could reach your real Stripe account.** The factory ran
+  before the ephemeral credentials and replay transport were installed, so a
+  factory calling `createAsStripeCustomer()` — Cashier's documented way to make
+  a customer — used your real key against the real API. The billable is now
+  built inside the protected window.
+- **A replay could leave real rows behind and still report PASS.** Application
+  code calling `DB::commit()` took ownership of the transaction the replay
+  opened; the rollback afterwards became a silent no-op and the writes became
+  permanent. The runner now checks it still owns the transaction and fails with
+  a named error.
+- **The mail guard could be skipped.** Delivery was refused by returning `false`
+  from `MessageSending`, but `Dispatcher::until()` stops at the first listener
+  that answers — so an application listener returning any non-null value meant
+  the guard was never consulted. Every configured mailer is now pointed at the
+  array transport for the run, which no listener ordering can defeat.
+- **Notifications never ran the application's `toMail()`.** Blocking at
+  `NotificationSending` returned before the channel built the message, so the
+  bug class the guard exists to expose was unreachable for notification-based
+  dunning. Mail-channel notifications now run in full and die at the transport;
+  only channels with no mail transport behind them are refused outright.
+- **The billable preflight assumed `cus_1`.** The expected customer id was a
+  hardcoded literal rather than something read from the fixture, so a recording
+  whose billable was any other customer failed with an error blaming the
+  factory. It is now read from the recording, and stands down when the
+  recording names no single customer.
+- **"Cashier returned a different record" covered three different problems.**
+  No matching row, several rows sharing an id, and a genuine mismatch now each
+  get their own message. The duplicate case is the v0.1.0 residue one, and it
+  now says so.
+- **Side effects listed only `To:` recipients.** Cc and Bcc are people too, and
+  two messages differing only in Cc collided into one ledger entry. All three
+  are recorded, sorted and de-duplicated.
+- `beginTransaction()` moved inside the try/finally, so a transaction-begin
+  listener that throws cannot leak an open transaction.
+
+### Changed
+
+- The `OutputStyle` workaround shared by both commands moved into a
+  `WritesToConsole` trait. It was duplicated, and only one copy carried the
+  explanation.
+
+### Documentation
+
+- The mail-safety section no longer claims more than it delivers. Queued work is
+  observed but not blocked: on Redis or SQS the job outlives the rollback, so
+  replays of queued dunning want `QUEUE_CONNECTION=sync`.
+
 ## v0.2.0 — a replay you can run twice, that never mails a customer - 2026-09-06
 
 A correctness release. Every headline feature in v0.1.0 worked once, on a clean

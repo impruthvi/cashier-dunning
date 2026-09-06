@@ -94,21 +94,14 @@ final class OutboundGuard
             );
         });
 
-        $this->events->listen(MessageSending::class, function (MessageSending $event): ?bool {
-            if ($this->ledger === null) {
-                return null;
-            }
-
-            // Recipients, not indexes. An entry reading "mail:0" tells whoever
-            // is reading a failure nothing about who nearly got the second email.
-            $recipients = array_map(
-                static fn (Address $address): string => $address->getAddress(),
-                $event->message->getTo()
-            );
-
-            $this->ledger->recordBlocked('mail:'.implode(',', $recipients));
-
-            return false;
+        // Records only. Delivery is stopped by the array transport that
+        // SimulationEnvironment swaps in for the run, not by halting this
+        // event — `Dispatcher::until()` stops at the first listener that
+        // answers, so a `false` here is only reached if no application
+        // listener answered first. Recording without answering keeps this
+        // listener out of that race entirely.
+        $this->events->listen(MessageSending::class, function (MessageSending $event): void {
+            $this->ledger?->recordBlocked('mail:'.$this->recipients($event));
         });
 
         $this->events->listen(NotificationSending::class, function (NotificationSending $event): ?bool {
@@ -118,7 +111,37 @@ final class OutboundGuard
 
             $this->ledger->recordBlocked('notification:'.$event->notification::class);
 
-            return false;
+            // The mail channel is allowed to proceed so the application's
+            // `toMail()` actually runs — that method is application code and a
+            // bug in it is exactly what a replay is for. The message it builds
+            // dies at the array transport a moment later.
+            //
+            // Every other channel talks to a network this package has no seam
+            // into, so those are refused here and the run does not get to see
+            // what they would have said.
+            return $event->channel === 'mail' ? null : false;
         });
+    }
+
+    /**
+     * Who the message was actually addressed to.
+     *
+     * To, Cc and Bcc together: all three reach a real person, and an entry
+     * that lists only the To line under-reports who a duplicate-send bug
+     * touched. Sorted so the same set of recipients always produces the same
+     * ledger key regardless of the order the application added them.
+     */
+    private function recipients(MessageSending $event): string
+    {
+        $message = $event->message;
+
+        $addresses = array_map(
+            static fn (Address $address): string => $address->getAddress(),
+            [...$message->getTo(), ...$message->getCc(), ...$message->getBcc()]
+        );
+
+        sort($addresses);
+
+        return implode(',', array_unique($addresses));
     }
 }

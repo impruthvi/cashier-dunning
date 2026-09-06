@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
+use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
@@ -23,10 +24,11 @@ use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Laravel\Cashier\Cashier;
-use Symfony\Component\Console\Output\OutputInterface;
 
 class SimulateCommand extends Command
 {
+    use WritesToConsole;
+
     public $signature = 'billing:simulate
         {scenario? : Scenario to run, e.g. trial-dunning-cancel-reactivate}
         {--record : Record against real Stripe instead of replaying a fixture}
@@ -293,25 +295,6 @@ class SimulateCommand extends Command
             $this->laravel->make(Kernel::class),
             $this->laravel->make(EntitlementResolver::class),
         );
-    }
-
-    /**
-     * The raw console stream, not Laravel's OutputStyle.
-     *
-     * `OutputStyle` collapses runs of spaces, so every aligned column and every
-     * indent this command builds arrives at the terminal as single-spaced text.
-     * The renderer's whole job is a readable timeline, and its own tests write
-     * to a plain `BufferedOutput` — so the suite saw alignment the CLI could not
-     * produce, and the published examples were captured from the suite.
-     */
-    private function display(): OutputInterface
-    {
-        return $this->output->getOutput();
-    }
-
-    private function write(string $line): void
-    {
-        $this->display()->writeln($line);
     }
 
     private function stripeKey(): ?string

@@ -58,6 +58,44 @@ class SimulationFailed extends RuntimeException
         );
     }
 
+    public static function replayTransactionWasEnded(): self
+    {
+        return new self(
+            'Application code committed or rolled back the transaction this replay '.
+            'opened, so the replay could not undo its own writes and they are now '.
+            'permanent. Remove the DB::commit() or DB::rollBack() from the code your '.
+            'webhooks reach, or move it onto its own connection.'
+        );
+    }
+
+    public static function billableCouldNotBeResolved(string $type, string $stripeId): self
+    {
+        return new self(
+            "The billable factory created [{$type}] with stripe_id [{$stripeId}], ".
+            'but Cashier::findBillable() found no record with that id. Check that '.
+            'Cashier::useCustomerModel() points at the model your factory creates, '.
+            'and that both use the same database connection.'
+        );
+    }
+
+    public static function billableIsNotEloquent(string $type): self
+    {
+        return new self(
+            "The billable factory returned [{$type}], which is not an Eloquent model. ".
+            'Cashier resolves billables through the query builder, so a replay cannot '.
+            'confirm the record it is about to drive webhooks at.'
+        );
+    }
+
+    public static function billableIdIsNotUnique(int $count, string $stripeId): self
+    {
+        return new self(
+            "{$count} customer records share stripe_id [{$stripeId}], so a replay ".
+            'cannot tell which one its webhooks are addressed to. Rows left behind '.
+            'by a v0.1.0 replay are the usual cause — delete them and run again.'
+        );
+    }
+
     public static function afterCommitCallbacksCannotBeObserved(int $count): self
     {
         $callbacks = $count === 1 ? 'callback' : 'callbacks';

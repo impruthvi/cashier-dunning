@@ -70,11 +70,16 @@ final readonly class ReplayRunner
         $model = Cashier::$customerModel;
         $database = (new $model)->getConnection();
         $transactionLevel = $database->transactionLevel();
-        $database->beginTransaction();
 
         $ledger = new SideEffectLedger;
+        $ownershipLost = false;
 
         try {
+            // Inside the try, so a listener on Laravel's transaction-begin
+            // event that throws after PDO has already begun still reaches the
+            // rollback below instead of leaking an open transaction.
+            $database->beginTransaction();
+
             // Every replay is observed and every outbound delivery is refused,
             // including the plain path. Replay drives the application's real
             // dunning listeners, and those exist to email customers.
@@ -83,7 +88,7 @@ final readonly class ReplayRunner
                 fn (): ReplayReport => (new SimulationEnvironment(
                     $this->config,
                     $client,
-                    (string) $placeholders->resolveString('{{cus_1}}'),
+                    $this->expectedBillableStripeId($fixture, $placeholders),
                 ))->run(
                     fn (SimulationContext $context): ReplayReport => $this->replay(
                         $fixture,
@@ -101,10 +106,24 @@ final readonly class ReplayRunner
             $pendingCallbacks = $this->afterCommitGuard()
                 ->callbacksDiscardedByRollback($database, $transactionLevel);
         } finally {
+            // Did application code end the transaction we opened?
+            //
+            // `Connection::rollBack($toLevel)` returns without doing anything
+            // when `$toLevel >= $this->transactions`, so a webhook handler that
+            // called DB::commit() turns the line below into a silent no-op and
+            // the replay's writes become permanent — with the run still
+            // reporting PASS. Recorded here and raised after the finally, so an
+            // exception already on its way out is not swallowed by this one.
+            $ownershipLost = $database->transactionLevel() <= $transactionLevel;
+
             // A replay is a question, not a migration. Restore our entry
             // level, including any nested transaction application code left
             // open, without rolling back a caller-owned transaction.
             $database->rollBack($transactionLevel);
+        }
+
+        if ($ownershipLost) {
+            throw SimulationFailed::replayTransactionWasEnded();
         }
 
         if ($pendingCallbacks > 0) {
@@ -277,6 +296,22 @@ final readonly class ReplayRunner
         $prefix = $this->config->get('cashier.path');
 
         return '/'.trim(is_string($prefix) ? $prefix : 'stripe', '/').'/webhook';
+    }
+
+    /**
+     * The stripe_id the fixture's webhooks are actually addressed to.
+     *
+     * Read from the recording rather than assumed. Null when the fixture names
+     * no customer or more than one, which stands the preflight down instead of
+     * failing a run for not matching an id the recording never used.
+     */
+    private function expectedBillableStripeId(Fixture $fixture, Placeholders $placeholders): ?string
+    {
+        $placeholder = $fixture->customerPlaceholder();
+
+        return $placeholder === null
+            ? null
+            : (string) $placeholders->resolveString($placeholder);
     }
 
     private function afterCommitGuard(): AfterCommitGuard
