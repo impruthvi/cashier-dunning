@@ -82,9 +82,13 @@ Thirty-four days of billing. No Stripe account. Sub-second.
 ## The part live Stripe cannot test
 
 Stripe guarantees **at-least-once delivery** and does not guarantee order.
-Almost nobody tests against either, because you cannot ask Stripe to redeliver
-an event on demand, or to deliver a step's events in a different sequence. A
-fixture is a list you own, so replay can.
+Almost nobody tests against either. Redelivery you *can* provoke by hand — the
+Dashboard has a resend button per event under **Developers > Webhooks**, and
+`stripe events resend <id>` does it from the CLI. Both need a live account, a
+network round trip, and an event that already happened, which makes them a
+manual step rather than an assertion. Ordering you cannot provoke at all:
+Stripe offers no way to ask for a step's events in a different sequence. A
+fixture is a list you own, so replay does both — offline, seeded, in CI.
 
 **What this actually does, precisely:** a fixture step is one position on the
 clock — the events Stripe emitted at effectively the same moment. `--shuffle`
