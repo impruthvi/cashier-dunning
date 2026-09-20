@@ -2,6 +2,17 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.2.2 - 2026-09-20
+
+### Fixed
+
+- Resolver-free replays now skip recorded entitlement comparisons while continuing to assert every delivered webhook.
+
+### Added
+
+- Support for `stripe/stripe-php` 21.
+- CI coverage for Stripe PHP 17.4 through 21.
+
 ## v0.2.1 — the safety net had holes in it - 2026-09-06
 
 v0.2.0 shipped a guard that stops a replay mailing your customers. An
@@ -80,8 +91,8 @@ new billable preflight will refuse to run until it is gone:
 ```
 The billable factory created [App\Models\User] with stripe_id [cus_replay1],
 but Cashier::findBillable() returned a different record.
-```
 
+```
 Delete the rows an old replay left behind — users with the replay `stripe_id`
 your factory uses, and their subscriptions. There is no cleanup command; the
 population is small enough that guessing at which rows are yours would be worse
