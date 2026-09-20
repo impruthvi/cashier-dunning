@@ -10,6 +10,7 @@ use Impruthvi\CashierDunning\Chaos\EventOrderer;
 use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
+use Impruthvi\CashierDunning\Entitlements\NullResolver;
 use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
@@ -235,15 +236,19 @@ final readonly class ReplayRunner
             }
         }
 
+        $expectedEntitlements = $this->resolver instanceof NullResolver
+            ? []
+            : $step->entitlements;
+
         return [
             new StepResult(
                 index: $index,
                 label: $step->label,
                 advanceTo: $step->advanceTo->toString(),
                 events: $events,
-                expectedEntitlements: $step->entitlements,
+                expectedEntitlements: $expectedEntitlements,
                 actualEntitlements: $timeline->snapshot()->toArray(),
-                mismatches: $this->compareEntitlements($step->entitlements, $timeline->snapshot(), $assertions),
+                mismatches: $this->compareEntitlements($expectedEntitlements, $timeline->snapshot(), $assertions),
             ),
             $assertions,
         ];
