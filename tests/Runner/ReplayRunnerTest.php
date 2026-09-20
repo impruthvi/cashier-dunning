@@ -181,6 +181,13 @@ it('runs without an entitlement resolver', function () use ($start) {
 
     $report = runner()->run(shippedDunningFixture(), $start);
 
-    expect($report->passed())->toBeFalse()
-        ->and($report->steps[0]->mismatches)->not->toBe([]);
+    expect($report->passed())->toBeTrue()
+        ->and($report->verdict())->toBe('All 25 assertions passed.')
+        ->and($report->steps)->toHaveCount(7);
+
+    foreach ($report->steps as $step) {
+        expect($step->expectedEntitlements)->toBe([])
+            ->and($step->actualEntitlements)->toBe([])
+            ->and($step->mismatches)->toBe([]);
+    }
 });

@@ -74,12 +74,15 @@ it('is written by the command when asked for', function () {
     $this->artisan('billing:simulate', [
         'scenario' => 'trial-dunning-cancel-reactivate',
         '--json' => $path,
-    ])->assertFailed();
+    ])->assertSuccessful();
 
     $written = json_decode((string) file_get_contents($path), true);
 
     expect($written['scenario'])->toBe('trial-dunning-cancel-reactivate')
-        ->and($written['events_delivered'])->toBeGreaterThan(0);
+        ->and($written['passed'])->toBeTrue()
+        ->and($written['events_delivered'])->toBeGreaterThan(0)
+        ->and($written['steps'][0]['entitlements']['recording'])->toBe([])
+        ->and($written['steps'][0]['entitlements']['application'])->toBe([]);
 
     unlink($path);
 });
