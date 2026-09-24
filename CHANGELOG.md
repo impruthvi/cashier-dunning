@@ -2,6 +2,16 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.2.3 - 2026-09-24
+
+### Fixed
+
+- Replayed events now carry `livemode`, which every real Stripe event has and no hand-written fixture declared. An application that checks the flag — refusing to apply a live event to a test-mode install — rejected the entire replay, and the failure read as the application's bug rather than the harness's. A fixture that declares its own value keeps it.
+
+Defaulting at the delivery boundary rather than in the fixtures fixes every recorded scenario at once, and cannot regress when a new one is recorded.
+
+**Full Changelog**: https://github.com/impruthvi/cashier-dunning/compare/v0.2.2...v0.2.3
+
 ## v0.2.2 - 2026-09-20
 
 ### Fixed
@@ -91,6 +101,7 @@ new billable preflight will refuse to run until it is gone:
 ```
 The billable factory created [App\Models\User] with stripe_id [cus_replay1],
 but Cashier::findBillable() returned a different record.
+
 
 ```
 Delete the rows an old replay left behind — users with the replay `stripe_id`
