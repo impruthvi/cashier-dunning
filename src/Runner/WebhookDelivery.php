@@ -29,7 +29,7 @@ final readonly class WebhookDelivery
     /** @param array<string, mixed> $event */
     public function deliver(array $event): Response
     {
-        $envelope = $this->signer->envelope($event);
+        $envelope = $this->signer->envelope($this->asStripeSends($event));
 
         $request = Request::create(
             uri: $this->path,
@@ -49,5 +49,26 @@ final readonly class WebhookDelivery
         $this->kernel->terminate($request, $response);
 
         return $response;
+    }
+
+    /**
+     * Fill in the envelope fields every real Stripe event carries.
+     *
+     * Fixtures are written by hand, so they can leave out a field that is never
+     * absent on the wire. `livemode` is the one that matters: an application
+     * that checks it -- refusing to apply a live event to a test-mode install --
+     * refuses the entire replay instead, and reports it as the application's
+     * fault. That is precisely the class of breakage delivering through the real
+     * kernel exists to catch, so it must not be one the harness causes.
+     *
+     * A replay never reaches a provider, so it is always test mode. A fixture
+     * that declares its own value keeps it.
+     *
+     * @param  array<string, mixed>  $event
+     * @return array<string, mixed>
+     */
+    private function asStripeSends(array $event): array
+    {
+        return $event + ['livemode' => false];
     }
 }
