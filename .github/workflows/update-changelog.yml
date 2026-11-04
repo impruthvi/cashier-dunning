@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
+  actions: write
 
 jobs:
   update:
@@ -24,9 +26,40 @@ jobs:
           latest-version: ${{ github.event.release.name }}
           release-notes: ${{ github.event.release.body }}
 
-      - name: Commit updated CHANGELOG
-        uses: stefanzweifel/git-auto-commit-action@v7
+      - name: Open changelog pull request
+        id: changelog
+        uses: peter-evans/create-pull-request@v8
         with:
-          branch: main
-          commit_message: Update CHANGELOG
-          file_pattern: CHANGELOG.md
+          base: main
+          branch: changelog/${{ github.event.release.tag_name }}
+          add-paths: CHANGELOG.md
+          commit-message: Update CHANGELOG for ${{ github.event.release.tag_name }}
+          title: Update CHANGELOG for ${{ github.event.release.tag_name }}
+          body: |
+            ## Summary
+
+            ```text
+            release published → CHANGELOG.md update → pull request → Tests gate
+            ```
+
+            Adds the notes from ${{ github.event.release.html_url }}.
+
+            ## Evidence
+
+            - **Before:** the release notes are only on the release page.
+              **After:** CHANGELOG.md contains the release notes; CI is dispatched below.
+
+            ## Merge Danger
+
+            **Door:** two-way
+
+            **Blast Radius:** documentation
+
+      # GITHUB_TOKEN-created pull requests do not trigger pull_request workflows.
+      # Dispatch CI on the branch so its head gets the required Tests gate check.
+      - name: Run checks on the changelog branch
+        if: steps.changelog.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BRANCH: ${{ steps.changelog.outputs.pull-request-branch }}
+        run: gh workflow run run-tests.yml --repo "$GITHUB_REPOSITORY" --ref "$PR_BRANCH"
