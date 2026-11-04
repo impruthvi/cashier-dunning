@@ -2,6 +2,14 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## Unreleased
+
+### Changed
+
+- **A replay now isolates the application's default connection as well as the billable's.** Writes a webhook listener made to the default connection used to persist whenever Cashier's customer model lived on another connection — the most common multi-connection setup — and only a chaos replay happened to roll them back. A plain replay and a chaos replay now give the same guarantee: writes on the billable's connection and the default connection are rolled back (one transaction when they are the same connection), and code that commits either replay transaction fails the run. Writes to any other connection remain outside the guarantee. See [ADR-0001](docs/adr/0001-isolate-billable-and-default-connections.md).
+- `ChaosRunner` no longer takes a database connection or opens a transaction around each pass; construct it with just the `ReplayRunner`. Every pass is isolated by the replay itself.
+- The simulation environment and its collaborators (`SimulationEnvironment`, `SimulationContext`, `EphemeralCredentials`, `OutboundGuard`, `AfterCommitGuard`) are now `@internal` and not part of the public API.
+
 ## v0.2.3 - 2026-09-24
 
 ### Fixed

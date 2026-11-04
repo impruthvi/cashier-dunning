@@ -77,10 +77,7 @@ it('fails direct chaos runs instead of returning a false clean report', function
     $entryLevel = $database->transactionLevel();
 
     try {
-        (new ChaosRunner(
-            app(ReplayRunner::class),
-            $database,
-        ))->run(
+        (new ChaosRunner(app(ReplayRunner::class)))->run(
             (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
             shuffle: true,
             duplicate: false,

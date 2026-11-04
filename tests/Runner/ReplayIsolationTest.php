@@ -1,14 +1,18 @@
 <?php
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
+use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Tests\Support\BillingUser;
 use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\User;
+use Impruthvi\CashierDunning\Tests\TestCase;
 use Laravel\Cashier\Cashier;
+use Laravel\Cashier\Events\WebhookReceived;
 
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
@@ -40,7 +44,7 @@ it('preserves caller transactions and existing billing rows', function (bool $ch
         $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
         $report = $chaos
-            ? (new ChaosRunner($runner, $database))
+            ? (new ChaosRunner($runner))
                 ->run($fixture, shuffle: true, duplicate: false, seed: 7, iterations: 2)
             : $runner->run($fixture);
 
@@ -147,3 +151,94 @@ it('isolates CLI replay on the configured billable non-default connection', func
             ->and(DB::connection('billing')->transactionLevel())->toBe($billingLevel);
     }
 })->with(['plain replay' => false, 'chaos replay' => true]);
+
+/**
+ * Point Cashier at a customer model on a second in-memory connection, so the
+ * billable's connection and the application's default connection differ.
+ */
+function billableOnBillingConnection(TestCase $test): void
+{
+    config()->set('database.connections.billing', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    (fn () => $this->createCashierTables('billing'))->call($test);
+
+    Cashier::useCustomerModel(BillingUser::class);
+    CashierDunning::createBillableUsing(fn () => BillingUser::create([
+        'name' => 'Jenny',
+        'email' => 'jenny@example.com',
+        'stripe_id' => 'cus_replay1',
+    ]));
+    registerDunningPolicy();
+}
+
+it('rolls back default-connection writes when the billable lives on another connection', function () {
+    billableOnBillingConnection($this);
+
+    // The most common multi-connection setup: billing data elsewhere, and the
+    // application's own bookkeeping on the default connection.
+    Event::listen(WebhookReceived::class, function (WebhookReceived $event): void {
+        DB::connection()->table('users')->insert([
+            'name' => 'audit',
+            'email' => 'audit@example.com',
+            'stripe_id' => (string) ($event->payload['id'] ?? 'evt'),
+        ]);
+    });
+
+    $defaultLevel = DB::connection()->transactionLevel();
+    $billingLevel = DB::connection('billing')->transactionLevel();
+
+    $report = app(ReplayRunner::class)->run(
+        (new FixtureRepository)->find('trial-dunning-cancel-reactivate')
+    );
+
+    expect($report->passed())->toBeTrue()
+        ->and(DB::connection()->transactionLevel())->toBe($defaultLevel)
+        ->and(DB::connection('billing')->transactionLevel())->toBe($billingLevel);
+
+    $this->assertDatabaseCount('users', 0);
+    $this->assertDatabaseCount('users', 0, 'billing');
+    $this->assertDatabaseCount('subscriptions', 0, 'billing');
+});
+
+it('fails the run when application code commits the default-connection transaction the replay opened', function () {
+    billableOnBillingConnection($this);
+
+    Event::listen(WebhookReceived::class, function (WebhookReceived $event): void {
+        if (($event->payload['type'] ?? null) === 'invoice.payment_failed' && DB::connection()->transactionLevel() > 0) {
+            DB::connection()->commit();
+        }
+    });
+
+    $defaultLevel = DB::connection()->transactionLevel();
+    $billingLevel = DB::connection('billing')->transactionLevel();
+
+    expect(fn () => app(ReplayRunner::class)->run(
+        (new FixtureRepository)->find('trial-dunning-cancel-reactivate')
+    ))->toThrow(SimulationFailed::class, 'could not undo its own writes');
+
+    expect(DB::connection()->transactionLevel())->toBe($defaultLevel)
+        ->and(DB::connection('billing')->transactionLevel())->toBe($billingLevel);
+});
+
+it('opens a single transaction when the billable uses the default connection', function () {
+    billableUser();
+    registerDunningPolicy();
+
+    $entryLevel = DB::connection()->transactionLevel();
+    $deepest = $entryLevel;
+
+    CashierDunning::resolveEntitlementsUsing(function (User $billable) use (&$deepest): array {
+        $deepest = max($deepest, DB::connection()->transactionLevel());
+
+        return [];
+    });
+
+    app(ReplayRunner::class)->run((new FixtureRepository)->find('trial-dunning-cancel-reactivate'));
+
+    expect($deepest)->toBe($entryLevel + 1)
+        ->and(DB::connection()->transactionLevel())->toBe($entryLevel);
+});

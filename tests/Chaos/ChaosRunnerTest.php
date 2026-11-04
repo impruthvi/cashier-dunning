@@ -20,10 +20,7 @@ function chaos(bool $shuffle, bool $duplicate, int $iterations = 2): ChaosReport
     billableUser();
     registerDunningPolicy();
 
-    return (new ChaosRunner(
-        app(ReplayRunner::class),
-        app('db')->connection(),
-    ))->run(
+    return (new ChaosRunner(app(ReplayRunner::class)))->run(
         fixture: (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
         shuffle: $shuffle,
         duplicate: $duplicate,
@@ -94,10 +91,7 @@ it('refuses to pass a shuffle over single-event steps', function () {
         ]],
     ]);
 
-    $report = (new ChaosRunner(
-        app(ReplayRunner::class),
-        app('db')->connection(),
-    ))->run($fixture, shuffle: true, duplicate: false, seed: 1, iterations: 2);
+    $report = (new ChaosRunner(app(ReplayRunner::class)))->run($fixture, shuffle: true, duplicate: false, seed: 1, iterations: 2);
 
     expect($report->passes[1]->notApplicable)->toBeTrue()
         ->and($report->passes[2]->notApplicable)->toBeTrue()
