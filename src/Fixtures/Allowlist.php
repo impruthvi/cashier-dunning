@@ -2,8 +2,6 @@
 
 namespace Impruthvi\CashierDunning\Fixtures;
 
-use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
-
 /**
  * Decides which fields may appear in a published fixture.
  *
@@ -20,10 +18,9 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
  * Two modes:
  *   apply(), applyToObject()  - used on record. Unlisted fields are dropped,
  *                               not masked.
- *   disallowedPaths(), disallowedPathsInObject(), assert() - used on load.
- *                               Unlisted fields refuse the fixture, because
- *                               their presence means it did not come from
- *                               apply().
+ *   disallowedPaths(), disallowedPathsInObject() - used on load. Unlisted
+ *                               fields refuse the fixture, because their
+ *                               presence means it did not come from apply().
  */
 final class Allowlist
 {
@@ -170,21 +167,6 @@ final class Allowlist
         $paths = $this->collect(['data' => ['object' => $object]], $this->permittedForObject($object));
 
         return array_map(static fn (string $path): string => substr($path, strlen('data.object.')), $paths);
-    }
-
-    /**
-     * @param  array<string, mixed>  $event
-     *
-     * @throws DisallowedField
-     */
-    public function assert(array $event): void
-    {
-        $type = (string) ($event['type'] ?? '');
-        $offending = $this->disallowedPaths($event, $this->permittedFor($type));
-
-        if ($offending !== []) {
-            throw DisallowedField::inEvent($type, $offending);
-        }
     }
 
     /**

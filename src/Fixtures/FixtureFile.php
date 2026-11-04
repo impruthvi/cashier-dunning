@@ -50,10 +50,10 @@ final class FixtureFile
             throw new InvalidFixture('Fixture must decode to an object.');
         }
 
-        return self::refuseUnpublishable(Fixture::fromArray($data));
+        return self::refuseInvalid(Fixture::fromArray($data));
     }
 
-    private static function refuseUnpublishable(Fixture $fixture): Fixture
+    private static function refuseInvalid(Fixture $fixture): Fixture
     {
         $allowlist = new Allowlist;
 
@@ -70,7 +70,7 @@ final class FixtureFile
                 $offending = $allowlist->disallowedPathsInObject($exchange->responseBody);
 
                 if ($offending !== []) {
-                    throw DisallowedField::inApiResponse($index, $exchange->method, $exchange->path, $offending);
+                    throw DisallowedField::inApiResponse($index, $exchange, $offending);
                 }
             }
         }

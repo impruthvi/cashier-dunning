@@ -149,7 +149,7 @@ it('refuses to load a fixture whose recorded API response carries a field the al
         'status' => 'active',
         'metadata' => ['internal_note' => 'VIP, call before dunning'],
     ]));
-})->throws(InvalidFixture::class, 'Step 0');
+})->throws(InvalidFixture::class, 'Step 0 is invalid: the recorded response to [GET /v1/subscriptions/{{sub_1}}] contains fields not permitted by the allowlist: metadata');
 
 it('refuses a recorded API response of a kind the allowlist has no rules for', function () {
     // Fails closed: a payment method nobody wrote rules for keeps nothing but
