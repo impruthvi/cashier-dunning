@@ -70,6 +70,20 @@ it('fails when a fixture on disk is not loadable', function () {
     rmdir(dirname($path));
 });
 
+it('fails when a fixture on disk carries a field the allowlist does not permit', function () {
+    // The corpus is published. Doctor is where a leaked field is found before a
+    // pull request publishes it.
+    $root = applicationFixtureFrom('leaky', withLeakedEventField(...));
+
+    try {
+        $this->artisan('billing:doctor')
+            ->expectsOutputToContain('Fixture [leaky.json]: Step 0 is invalid: event [invoice.finalized] contains fields not permitted by the allowlist: data.object.customer_email')
+            ->assertFailed();
+    } finally {
+        removeFixtureDirectory($root);
+    }
+});
+
 it('reports a registered entitlement resolver', function () {
     CashierDunning::resolveEntitlementsUsing(fn () => ['teams' => true]);
 

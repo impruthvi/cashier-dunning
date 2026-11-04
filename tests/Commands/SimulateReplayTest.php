@@ -114,6 +114,39 @@ it('names the scenarios it does have when asked for one it does not', function (
         ->assertFailed();
 });
 
+it('refuses to replay a fixture that carries a field the allowlist does not permit', function () {
+    registerReplayApp();
+    $root = applicationFixtureFrom('leaky', withLeakedEventField(...));
+
+    try {
+        $this->artisan('billing:simulate leaky')
+            ->expectsOutputToContain('data.object.customer_email')
+            ->doesntExpectOutputToContain('replayed with no Stripe account')
+            ->assertFailed();
+    } finally {
+        removeFixtureDirectory($root);
+    }
+});
+
+it('refuses to replay a recording that came up short of its manifest', function () {
+    // A short recording replays green forever. Refused, it says what is missing.
+    registerReplayApp();
+    $root = applicationFixtureFrom('short', function (array $fixture): array {
+        $fixture['manifest']['required_events'][] = 'charge.dispute.created';
+
+        return $fixture;
+    });
+
+    try {
+        $this->artisan('billing:simulate short')
+            ->expectsOutputToContain('missing required events: charge.dispute.created')
+            ->doesntExpectOutputToContain('replayed with no Stripe account')
+            ->assertFailed();
+    } finally {
+        removeFixtureDirectory($root);
+    }
+});
+
 it('explains how to register a billable before running anything', function () {
     // The normal test billable now has a factory; this case needs a model
     // without one to exercise the missing-factory diagnostic.

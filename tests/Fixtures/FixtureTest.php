@@ -106,17 +106,83 @@ it('names the missing key when a top-level key is absent', function () {
     FixtureFile::decode(json_encode($data));
 })->throws(InvalidFixture::class, '[scenario]');
 
+it('refuses to load a fixture whose event carries a field the allowlist does not permit', function () {
+    // Fixtures are published. A field the allowlist never permitted means the
+    // file did not come through redaction, so it is refused before anything
+    // reads it, let alone replays it.
+    FixtureFile::decode(json_encode(minimalFixtureArray([
+        'steps' => [[
+            'advance_to' => '0d',
+            'label' => 'start',
+            'events' => [[
+                'id' => '{{evt_1}}',
+                'type' => 'customer.subscription.created',
+                'data' => ['object' => ['id' => '{{sub_1}}', 'customer_email' => 'someone@example.com']],
+            ]],
+        ]],
+    ])));
+})->throws(InvalidFixture::class, 'Step 0 is invalid: event [customer.subscription.created] contains fields not permitted by the allowlist: data.object.customer_email');
+
+/** @param array<string, mixed> $responseBody */
+function fixtureWithExchangeResponse(array $responseBody): string
+{
+    return json_encode(minimalFixtureArray([
+        'steps' => [[
+            'advance_to' => '0d',
+            'label' => 'start',
+            'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
+            'api_responses' => [[
+                'match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => []],
+                'response' => ['status' => 200, 'body' => $responseBody],
+            ]],
+        ]],
+    ]));
+}
+
+it('refuses to load a fixture whose recorded API response carries a field the allowlist does not permit', function () {
+    // A recorded response and the webhook about the same subscription are the
+    // same data by different routes. Recording redacts both, so loading has to
+    // refuse both, or a response becomes the way unredacted data gets published.
+    FixtureFile::decode(fixtureWithExchangeResponse([
+        'id' => '{{sub_1}}',
+        'object' => 'subscription',
+        'status' => 'active',
+        'metadata' => ['internal_note' => 'VIP, call before dunning'],
+    ]));
+})->throws(InvalidFixture::class, 'Step 0 is invalid: the recorded response to [GET /v1/subscriptions/{{sub_1}}] contains fields not permitted by the allowlist: metadata');
+
+it('refuses a recorded API response of a kind the allowlist has no rules for', function () {
+    // Fails closed: a payment method nobody wrote rules for keeps nothing but
+    // its id, rather than leaking until someone notices.
+    FixtureFile::decode(fixtureWithExchangeResponse([
+        'id' => '{{pm_1}}',
+        'object' => 'payment_method',
+        'billing_details' => ['email' => 'someone@example.com'],
+    ]));
+})->throws(InvalidFixture::class, 'billing_details');
+
 it('reports required events that the recording never produced', function () {
-    $fixture = FixtureFile::decode(json_encode(minimalFixtureArray([
+    $fixture = Fixture::fromArray(minimalFixtureArray([
+        'manifest' => [
+            'required_events' => ['customer.subscription.created', 'invoice.payment_failed'],
+            'optional_events' => [],
+        ],
+    ]));
+
+    expect($fixture->satisfiesManifest())->toBeFalse()
+        ->and($fixture->missingRequiredEvents())->toBe(['invoice.payment_failed']);
+});
+
+it('refuses to load a recording that came up short of its manifest', function () {
+    // A short recording is plausible and wrong: it replays green forever. So it
+    // is refused when loaded, naming what never arrived.
+    FixtureFile::decode(json_encode(minimalFixtureArray([
         'manifest' => [
             'required_events' => ['customer.subscription.created', 'invoice.payment_failed'],
             'optional_events' => [],
         ],
     ])));
-
-    expect($fixture->satisfiesManifest())->toBeFalse()
-        ->and($fixture->missingRequiredEvents())->toBe(['invoice.payment_failed']);
-});
+})->throws(InvalidFixture::class, 'invoice.payment_failed');
 
 it('considers the reference fixture to satisfy its own manifest', function () {
     expect(FixtureFile::read(referenceFixturePath())->satisfiesManifest())->toBeTrue();

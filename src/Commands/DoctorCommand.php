@@ -7,7 +7,6 @@ use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Commands\Concerns\LocatesFixtures;
 use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
-use Impruthvi\CashierDunning\Fixtures\Allowlist;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\KeyMode;
@@ -148,24 +147,14 @@ class DoctorCommand extends Command
             return;
         }
 
-        $allowlist = new Allowlist;
         $broken = 0;
 
         foreach ($files as $file) {
+            // Loading is the check: a fixture that breaks the allowlist or
+            // comes up short of its manifest is refused by FixtureFile, the
+            // same refusal a replay meets. Doctor only finds it sooner.
             try {
-                $fixture = FixtureFile::read($file);
-
-                foreach ($fixture->steps as $step) {
-                    foreach ($step->events as $event) {
-                        $allowlist->assert($event);
-                    }
-                }
-
-                if (! $fixture->satisfiesManifest()) {
-                    throw new \RuntimeException(
-                        'missing required events: '.implode(', ', $fixture->missingRequiredEvents())
-                    );
-                }
+                FixtureFile::read($file);
             } catch (Throwable $e) {
                 $broken++;
                 $this->problem('Fixture ['.basename($file).']: '.$e->getMessage());

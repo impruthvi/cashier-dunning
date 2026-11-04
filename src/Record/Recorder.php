@@ -208,7 +208,7 @@ final class Recorder
 
         /** @var array<string, mixed> $body */
         $body = $normalizer->normalize(
-            $allowlist->applyToObject($subscription->toArray(), 'customer.subscription.updated')
+            $allowlist->applyToObject($subscription->toArray())
         );
 
         return [new ApiExchange(

@@ -379,7 +379,9 @@ Stripe support will ask for.
 The first two fixtures were recorded against a dedicated synthetic Stripe test
 account with invented products, so there is nothing sensitive in them by
 construction. Field-level redaction runs on write against an allowlist that
-fails closed.
+fails closed, and loading a fixture refuses one whose events or recorded API
+responses carry a field the allowlist does not permit, or that is missing an
+event its manifest requires.
 
 `cancel-at-period-end-then-canceled-early` is the exception: it is hand-authored
 from Stripe's documented subscription object rather than recorded, because it

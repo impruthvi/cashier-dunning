@@ -76,3 +76,40 @@ function registerPlanLimits(): void
         }
     );
 }
+
+/**
+ * The shipped dunning fixture, altered, as the application's only recording.
+ *
+ * @param  callable(array<string, mixed>): array<string, mixed>  $alter
+ * @return string the fixture directory to remove with removeFixtureDirectory()
+ */
+function applicationFixtureFrom(string $scenario, callable $alter): string
+{
+    $root = sys_get_temp_dir().'/cashier-dunning-fixtures-'.uniqid();
+    mkdir($root.'/stripe', 0755, true);
+
+    $data = json_decode((string) file_get_contents(__DIR__.'/../fixtures/stripe/trial-dunning-cancel-reactivate.json'), true);
+    file_put_contents($root.'/stripe/'.$scenario.'.json', json_encode($alter($data)));
+
+    config()->set('cashier-dunning.fixtures.path', $root);
+
+    return $root;
+}
+
+function removeFixtureDirectory(string $root): void
+{
+    array_map(unlink(...), glob($root.'/stripe/*.json') ?: []);
+    rmdir($root.'/stripe');
+    rmdir($root);
+}
+
+/**
+ * @param  array<string, mixed>  $fixture
+ * @return array<string, mixed>
+ */
+function withLeakedEventField(array $fixture): array
+{
+    $fixture['steps'][0]['events'][0]['data']['object']['customer_email'] = 'someone@example.com';
+
+    return $fixture;
+}

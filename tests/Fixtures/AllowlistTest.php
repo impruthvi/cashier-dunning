@@ -1,7 +1,6 @@
 <?php
 
 use Impruthvi\CashierDunning\Fixtures\Allowlist;
-use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 
 /** @return array<string, mixed> */
@@ -71,17 +70,18 @@ it('reports every disallowed path rather than only the first', function () {
         ->and($paths)->toContain('data.object.items.data.0.price.nickname');
 });
 
-it('throws when asserting against a fixture that was not filtered', function () {
-    // assert() is the validate path: a fixture carrying unlisted fields did not
-    // come from apply(), so it has not been through redaction.
-    (new Allowlist)->assert(subscriptionEventWithPii());
-})->throws(DisallowedField::class, 'customer_email');
+it('finds unlisted fields in an event that was not filtered', function () {
+    // The load path: a fixture carrying unlisted fields did not come from
+    // apply(), so it has not been through redaction.
+    expect((new Allowlist)->disallowedPaths(subscriptionEventWithPii()))
+        ->toContain('data.object.customer_email');
+});
 
-it('accepts an event that has already been filtered', function () {
+it('finds nothing to object to in an event that has already been filtered', function () {
     $allowlist = new Allowlist;
 
-    $allowlist->assert($allowlist->apply(subscriptionEventWithPii()));
-})->throwsNoExceptions();
+    expect($allowlist->disallowedPaths($allowlist->apply(subscriptionEventWithPii())))->toBe([]);
+});
 
 it('accepts every event in the shipped reference fixture', function () {
     // The corpus is published. If this ever fails, something unpublishable is
@@ -91,7 +91,34 @@ it('accepts every event in the shipped reference fixture', function () {
 
     foreach ($fixture->steps as $step) {
         foreach ($step->events as $event) {
-            $allowlist->assert($event);
+            expect($allowlist->disallowedPaths($event))->toBe([]);
         }
     }
-})->throwsNoExceptions();
+});
+
+it('redacts a recorded API response by the rules for its own kind of object', function () {
+    // Recording redacts a response and loading judges it. Both pick the rules
+    // from the object's own kind, so the two can never disagree about which
+    // list applies.
+    $subscription = subscriptionEventWithPii()['data']['object'];
+
+    expect((new Allowlist)->applyToObject($subscription))->toBe([
+        'id' => 'sub_1',
+        'object' => 'subscription',
+        'status' => 'trialing',
+        'customer' => 'cus_1',
+        'items' => ['data' => [[
+            'id' => 'si_1',
+            'quantity' => 1,
+            'price' => ['id' => 'price_1', 'recurring' => ['interval' => 'month']],
+        ]]],
+    ]);
+});
+
+it('keeps only the id and kind of a recorded object it has no rules for', function () {
+    expect((new Allowlist)->applyToObject([
+        'id' => 'pm_1',
+        'object' => 'payment_method',
+        'billing_details' => ['email' => 'jenny.rosen@example.com'],
+    ]))->toBe(['id' => 'pm_1', 'object' => 'payment_method']);
+});
