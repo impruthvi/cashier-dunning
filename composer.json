@@ -58,6 +58,7 @@
     "autoload-dev": {
         "psr-4": {
             "Impruthvi\\CashierDunning\\Tests\\": "tests/",
+            "Impruthvi\\CashierDunning\\PHPStan\\": "phpstan/",
             "Workbench\\App\\": "workbench/app/"
         }
     },

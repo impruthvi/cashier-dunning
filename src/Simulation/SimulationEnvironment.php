@@ -182,6 +182,7 @@ final class SimulationEnvironment
             // way out, and that exception is the one that explains why the run
             // ended. The run still fails either way.
             if ($rollbackFailure !== null && ! $exceptionInFlight) {
+                // @phpstan-ignore cashierDunning.throwInFinally (guarded: only reached when no exception is on its way out)
                 throw $rollbackFailure;
             }
         }

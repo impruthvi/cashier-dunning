@@ -7,3 +7,7 @@ parameters:
         - src
         - config
     tmpDir: build/phpstan
+
+rules:
+    # A throw in `finally` replaces the exception already on its way out (#34).
+    - Impruthvi\CashierDunning\PHPStan\Rules\ThrowInFinallyRule
