@@ -7,7 +7,6 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
-use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
 use Impruthvi\CashierDunning\Entitlements\NullResolver;
@@ -15,7 +14,6 @@ use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
-use Impruthvi\CashierDunning\Guards\OutboundGuard;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
@@ -47,7 +45,6 @@ final readonly class ReplayRunner
         private Repository $config,
         private Kernel $kernel,
         private EntitlementResolver $resolver,
-        private OutboundGuard $outboundGuard,
         private DatabaseTransactionsManager $transactions,
         private SimulationEnvironment $environment,
     ) {}
@@ -65,7 +62,6 @@ final readonly class ReplayRunner
         $database = (new $model)->getConnection();
         $transactionLevel = $database->transactionLevel();
 
-        $ledger = new SideEffectLedger;
         $ownershipLost = false;
 
         try {
@@ -74,22 +70,15 @@ final readonly class ReplayRunner
             // rollback below instead of leaking an open transaction.
             $database->beginTransaction();
 
-            // Every replay is observed and every outbound delivery is refused,
-            // including the plain path. Replay drives the application's real
-            // dunning listeners, and those exist to email customers.
-            $report = $this->outboundGuard->protect(
-                $ledger,
-                fn (): ReplayReport => $this->environment->run(
+            $report = $this->environment->run(
+                $fixture,
+                fn (SimulationContext $context): ReplayReport => $this->replay(
                     $fixture,
-                    fn (SimulationContext $context): ReplayReport => $this->replay(
-                        $fixture,
-                        $context,
-                        $orderer ?? EventOrderer::inOrder(),
-                        $pass,
-                        $ledger,
-                    ),
-                    $startingAt
-                )
+                    $context,
+                    $orderer ?? EventOrderer::inOrder(),
+                    $pass,
+                ),
+                $startingAt
             );
 
             $pendingCallbacks = (new AfterCommitGuard($this->transactions))
@@ -127,7 +116,6 @@ final readonly class ReplayRunner
         SimulationContext $context,
         EventOrderer $orderer,
         int $pass,
-        SideEffectLedger $ledger,
     ): ReplayReport {
         $delivery = new WebhookDelivery(
             $this->kernel,
@@ -169,8 +157,8 @@ final readonly class ReplayRunner
             steps: $results,
             assertions: $assertions,
             completed: $completed,
-            sideEffects: $ledger->signature(),
-            blockedDeliveries: $ledger->blocked(),
+            sideEffects: $context->sideEffects(),
+            blockedDeliveries: $context->blockedDeliveries(),
         );
     }
 

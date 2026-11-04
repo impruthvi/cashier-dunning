@@ -2,12 +2,12 @@
 
 namespace Impruthvi\CashierDunning\Guards;
 
-use Closure;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Queue\Events\JobQueued;
 use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
+use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Symfony\Component\Mime\Address;
 
 /**
@@ -38,6 +38,11 @@ use Symfony\Component\Mime\Address;
  * happened, so there is nothing left to refuse; a replay on a non-`sync` queue
  * connection leaves a real job in a real queue. That limit is documented rather
  * than papered over.
+ *
+ * Armed and disarmed by {@see SimulationEnvironment}, which refuses to nest, so
+ * there is only ever one ledger to observe into.
+ *
+ * @internal
  */
 final class OutboundGuard
 {
@@ -49,7 +54,7 @@ final class OutboundGuard
      * Listeners cannot be unregistered without also discarding the
      * application's own listeners for the same events — `Dispatcher::forget()`
      * takes an event, not a listener — so they stay registered and go inert
-     * instead. Nothing is intercepted outside `protect()`, which is what makes
+     * instead. Nothing is intercepted while disarmed, which is what makes
      * this safe to install in a long-lived application process.
      */
     private ?SideEffectLedger $ledger = null;
@@ -57,27 +62,23 @@ final class OutboundGuard
     public function __construct(private readonly Dispatcher $events) {}
 
     /**
-     * Run a replay with outbound delivery observed and blocked.
-     *
-     * @template T
-     *
-     * @param  Closure(): T  $callback
-     * @return T
+     * Record side effects into this ledger, and refuse their delivery, until
+     * disarmed.
      */
-    public function protect(SideEffectLedger $ledger, Closure $callback): mixed
+    public function arm(SideEffectLedger $ledger): void
     {
         $this->listen();
 
-        // Restored rather than nulled, so a runner nested inside another run
-        // hands observation back instead of silently disarming the guard.
-        $previous = $this->ledger;
         $this->ledger = $ledger;
+    }
 
-        try {
-            return $callback();
-        } finally {
-            $this->ledger = $previous;
-        }
+    /**
+     * Go inert. Called in the environment's `finally`, so a run that throws
+     * cannot leave the application's own mail and notifications refused.
+     */
+    public function disarm(): void
+    {
+        $this->ledger = null;
     }
 
     private function listen(): void

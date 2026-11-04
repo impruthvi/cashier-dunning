@@ -12,7 +12,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Guards\OutboundGuard;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
@@ -36,7 +38,12 @@ use Throwable;
  *   3. The clock, so that a subscription whose trial ends in fourteen days can
  *      be observed ending.
  *
- * All three are process-global. Leaking any of them out of a simulation would
+ * And side effects are recorded, and their delivery refused, for the whole
+ * run. A replay drives the application's real dunning listeners, and those
+ * exist to email customers; every attempt lands in a fresh ledger the context
+ * reads back.
+ *
+ * All of these are process-global. Leaking any of them out of a simulation would
  * corrupt every test that runs afterwards — and the corruption would surface
  * somewhere else entirely, as a test that fails only when run in a certain
  * order. So restoration happens in `finally`, unconditionally, including when
@@ -50,6 +57,7 @@ final class SimulationEnvironment
 
     public function __construct(
         private readonly Repository $config,
+        private readonly OutboundGuard $outboundGuard,
     ) {}
 
     /**
@@ -81,10 +89,14 @@ final class SimulationEnvironment
         ];
         $originalTestNow = Carbon::getTestNow();
         $originalMailers = $this->config->get('mail.mailers');
+        $ledger = new SideEffectLedger;
 
         $this->running = true;
 
         try {
+            // Armed first, so a billable factory that sends mail or queues a
+            // job is observed and refused like everything after it.
+            $this->outboundGuard->arm($ledger);
             $this->config->set('cashier.secret', $credentials->secret);
             $this->config->set('cashier.webhook.secret', $credentials->webhookSecret);
             $this->silenceMailTransports();
@@ -105,10 +117,15 @@ final class SimulationEnvironment
                 fixture: $fixture,
                 client: $client,
                 placeholders: $placeholders,
+                ledger: $ledger,
             );
 
             return $callback($context);
         } finally {
+            // First, so a restoration step that throws below cannot leave the
+            // guard refusing the application's mail outside a run.
+            $this->outboundGuard->disarm();
+
             // Unconditional, including on the way out of an exception. A leaked
             // transport or a frozen clock would fail some later test instead,
             // and that failure would be unreadable.
