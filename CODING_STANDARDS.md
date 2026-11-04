@@ -9,8 +9,10 @@ true: grep README.md, GLOSSARY.md, docs/adr/ and the SimulationEnvironment docbl
 glossary term (isolation, transaction, side effect), not just the changed hunk.
 
 When a diff touches how a fixture is loaded or validated, every docblock that says a fixture
-is refused, rejected or verified needs a test that loads such a fixture and sees it refused.
-A refusal claim with no test behind it is a finding.
+is refused, rejected or verified needs a test that loads such a fixture and sees it refused
+for that reason: the expected message names what was refused (the field, the event, the
+token), not text other refusals share, such as `Step 0`. A refusal claim with no test behind
+it, or only a test that any refusal would pass, is a finding.
 
 ## Removed assertions
 

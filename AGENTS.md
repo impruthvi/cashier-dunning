@@ -2,7 +2,7 @@
 
 ## Checks
 
-Run `composer test`, `composer analyse` and `composer format`. Call PHPStan through `composer analyse`: it carries the memory limit PHPStan needs to finish.
+Run `composer check`. It runs format, analyse, then test, and stops at the first failure, so a syntax error costs one line rather than the whole suite. Call PHPStan through `composer analyse`: it carries the memory limit PHPStan needs to finish.
 
 ## Agent skills
 
