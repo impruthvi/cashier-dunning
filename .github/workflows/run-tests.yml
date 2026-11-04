@@ -44,22 +44,18 @@ jobs:
       fail-fast: false
       matrix:
         php: ['8.3', '8.4', '8.5']
-        laravel: ['11.*', '12.*', '13.*']
+        # No Laravel 11. It no longer receives security fixes, and advisories
+        # against every 11.x release (PKSA-b41t-wbzk-9q51, a critical TokenGuard
+        # bypass, among them) mean Composer 2.11 refuses to install any of them.
+        # Turning that refusal off here would put a green cell on a combination
+        # users cannot install.
+        laravel: ['12.*', '13.*']
         stability: [prefer-lowest, prefer-stable]
         include:
           - laravel: '13.*'
             testbench: '11.*'
           - laravel: '12.*'
             testbench: '10.*'
-          - laravel: '11.*'
-            testbench: '^9.13'
-        exclude:
-          # Laravel 11's constraint is php ^8.2, so Composer will happily install
-          # it on 8.5 — but 11.x shipped before 8.5 existed and is not tested
-          # against it upstream. A green cell here would advertise a combination
-          # nobody supports.
-          - laravel: '11.*'
-            php: '8.5'
 
     name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }}
 
