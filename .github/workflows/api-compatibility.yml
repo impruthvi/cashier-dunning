@@ -1,0 +1,63 @@
+name: api-compatibility
+
+# Lists every backwards-incompatible change to the public API since the latest
+# release, so the release notes can name each one.
+#
+# Release notes are written by hand when a release is published, and
+# update-changelog.yml copies them into CHANGELOG.md. A break that is only
+# described in a pull request body is easy to leave out of them. This job finds
+# them mechanically instead.
+#
+# It reports and does not block: the package is 0.x, breaks are allowed, and
+# the Tests gate does not wait on this job. A red check here means "say this in
+# the release notes", not "undo it". Mark a class @internal to take it out of
+# the public API, and out of this report.
+#
+# Needs no secrets, like run-tests.yml.
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - '.github/workflows/api-compatibility.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backwards-compatibility:
+    name: Breaks since the latest release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # The checker compares against a tag, so it needs history and tags.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
+          coverage: none
+
+      - name: Install the checker outside the project
+        # Not a dev dependency: its own requirements would have to agree with
+        # every Laravel and Testbench version the test matrix installs.
+        # It installs each revision's dependencies itself, so the project's are
+        # not installed here.
+        run: composer global require --no-interaction --no-progress "roave/backward-compatibility-check:^8.27"
+
+      - name: Compare with the latest release
+        run: |
+          latest="$(git describe --tags --abbrev=0)"
+          echo "Comparing with ${latest}."
+          "$(composer global config bin-dir --absolute)/roave-backward-compatibility-check" \
+            --from="${latest}" --format=github-actions --format=markdown

@@ -68,7 +68,12 @@
         "analyse": "vendor/bin/phpstan analyse --memory-limit=1G",
         "test": "vendor/bin/pest",
         "test-coverage": "vendor/bin/pest --coverage",
-        "format": "vendor/bin/pint"
+        "format": "vendor/bin/pint",
+        "check": [
+            "@format",
+            "@analyse",
+            "@test"
+        ]
     },
     "config": {
         "sort-packages": true,
