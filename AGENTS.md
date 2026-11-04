@@ -1,5 +1,9 @@
 # cashier-dunning
 
+## Checks
+
+Run `composer test`, `composer analyse` and `composer format`. Call PHPStan through `composer analyse`: it carries the memory limit PHPStan needs to finish.
+
 ## Agent skills
 
 ### Issue tracker
