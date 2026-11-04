@@ -21,6 +21,9 @@ on:
       - '**.php'
       - '.github/workflows/run-tests.yml'
       - 'phpunit.xml.dist'
+      - 'phpstan.neon.dist'
+      - 'phpstan-baseline.neon'
+      - 'phpstan/**'
       - 'composer.json'
       - 'composer.lock'
   pull_request:
@@ -64,11 +67,11 @@ jobs:
 
           # Dispatched runs compare their branch with main, just like a PR.
           if git diff --name-only "$BASE...$HEAD" \
-            | grep -qE '\.php$|^\.github/workflows/run-tests\.yml$|^phpunit\.xml\.dist$|^composer\.(json|lock)$'; then
+            | grep -qE '\.php$|^\.github/workflows/run-tests\.yml$|^phpunit\.xml\.dist$|^phpstan(\.neon\.dist|-baseline\.neon|/)|^composer\.(json|lock)$'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "No code paths changed; the test matrix is skipped."
+            echo "No code paths changed; the test matrix and static analysis are skipped."
           fi
 
   test:
@@ -237,13 +240,42 @@ jobs:
       - name: Execute tests
         run: vendor/bin/pest --ci
 
+  phpstan:
+    # Inside this workflow rather than its own, so the gate below stands for it
+    # too and a pull request cannot merge with static analysis red.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: phpstan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@v4
+
+      - name: Run PHPStan
+        run: composer analyse -- --error-format=github
+
+      - name: Test the project's PHPStan rules
+        # Outside the package suite: PHPStan's container would leave it short of memory.
+        run: ./vendor/bin/phpunit -c phpstan/phpunit.xml.dist
+
   gate:
     # The one check to require on main. Branch protection cannot require a job
     # that might not run, and the matrix cells are skipped on docs-only pull
     # requests, so this job always runs and stands for all of them.
     name: Tests gate
     if: always()
-    needs: [changes, test, windows-smoke, stripe]
+    needs: [changes, test, windows-smoke, stripe, phpstan]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -255,6 +287,7 @@ jobs:
           TEST: ${{ needs.test.result }}
           WINDOWS: ${{ needs.windows-smoke.result }}
           STRIPE: ${{ needs.stripe.result }}
+          PHPSTAN: ${{ needs.phpstan.result }}
         run: |
           if [ "$CHANGES" != "success" ]; then
             echo "::error::Change detection ended with '$CHANGES'."
@@ -266,8 +299,8 @@ jobs:
             exit 0
           fi
 
-          echo "test: $TEST, windows-smoke: $WINDOWS, stripe: $STRIPE"
-          if [ "$TEST" != "success" ] || [ "$WINDOWS" != "success" ] || [ "$STRIPE" != "success" ]; then
-            echo "::error::The test matrix did not pass."
+          echo "test: $TEST, windows-smoke: $WINDOWS, stripe: $STRIPE, phpstan: $PHPSTAN"
+          if [ "$TEST" != "success" ] || [ "$WINDOWS" != "success" ] || [ "$STRIPE" != "success" ] || [ "$PHPSTAN" != "success" ]; then
+            echo "::error::The test matrix or static analysis did not pass."
             exit 1
           fi
