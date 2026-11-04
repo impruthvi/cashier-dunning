@@ -88,6 +88,23 @@ it('shows features that agree alongside the one that does not', function () {
     expect(render(divergingReport(), decorated: false))->toContain('projects  10            10');
 });
 
+it('highlights an entitlement with the same displayed value but a different type', function () {
+    $report = new ReplayReport('typed-entitlements', [
+        new StepResult(
+            index: 0,
+            label: 'projects granted',
+            advanceTo: '0d',
+            events: [],
+            expectedEntitlements: ['projects' => 10],
+            actualEntitlements: ['projects' => '10'],
+            mismatches: ['projects: recording says 10, application says 10'],
+        ),
+    ], assertions: 1, completed: false);
+
+    expect(render($report, decorated: true))
+        ->toContain("\033[31m        projects  10            10\033[39m");
+});
+
 it('renders a missing feature as an em dash rather than nothing', function () {
     $report = new ReplayReport('demo', [
         new StepResult(0, 'step', '0d', [], ['teams' => true], [], ['teams: missing']),
