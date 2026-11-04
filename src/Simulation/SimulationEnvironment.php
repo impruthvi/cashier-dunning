@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Connection;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -29,11 +30,13 @@ use Throwable;
  * Sets up the world a replay runs in, and — the part that matters — puts it
  * back.
  *
- * Database writes on the billable's connection happen inside a transaction
- * the environment opens before the billable factory runs, so the factory's
- * own INSERT is isolated too, and that transaction is always rolled back to
- * the caller's entry level. A transaction the caller already holds, such as
- * a test using `RefreshDatabase`, is left exactly as it was.
+ * Database writes on the billable's connection and the default connection
+ * happen inside transactions the environment opens before the billable
+ * factory runs, so the factory's own INSERT is isolated too, and each is
+ * always rolled back to the caller's entry level. When the two are the same
+ * connection, one transaction is opened. A transaction the caller already
+ * holds, such as a test using `RefreshDatabase`, is left exactly as it was.
+ * Writes to any other connection are not isolated (ADR-0001).
  *
  * Three pieces of global state have to move for a replay to work without a
  * Stripe account:
@@ -69,6 +72,7 @@ final class SimulationEnvironment
     public function __construct(
         private readonly Repository $config,
         private readonly OutboundGuard $outboundGuard,
+        private readonly DatabaseManager $databaseManager,
         DatabaseTransactionsManager $transactions,
     ) {
         $this->afterCommitGuard = new AfterCommitGuard($transactions);
@@ -89,7 +93,7 @@ final class SimulationEnvironment
         $this->running = true;
 
         try {
-            // The transaction is outermost: opened before anything else moves,
+            // The transactions are outermost: opened before anything else moves,
             // so the billable factory's writes are isolated, and rolled back
             // only once every piece of global state has been put back.
             return $this->isolated(fn (): mixed => $this->sealed($fixture, $callback, $startingAt));
@@ -99,8 +103,8 @@ final class SimulationEnvironment
     }
 
     /**
-     * Run the callback inside a transaction on the billable's connection, and
-     * always roll it back to the level it was entered at.
+     * Run the callback inside a transaction on each isolated connection, and
+     * always roll each back to the level it was entered at.
      *
      * Isolation failures are recorded during cleanup and raised only after it
      * has finished, so an exception already on its way out is not replaced.
@@ -113,36 +117,64 @@ final class SimulationEnvironment
     private function isolated(Closure $callback): mixed
     {
         // Resolved before the billable factory runs: its INSERT must be
-        // isolated too. Cashier uses this same model to find customers, and it
-        // may declare a non-default database connection.
-        $database = $this->billableConnection();
-        $entryLevel = $database->transactionLevel();
+        // isolated too.
+        $connections = $this->isolatedConnections();
+
+        /** @var array<string, int> $entryLevels */
+        $entryLevels = [];
 
         try {
-            // Inside the try, so a listener on Laravel's transaction-begin
-            // event that throws after PDO has already begun still reaches the
-            // rollback below instead of leaking an open transaction.
-            $database->beginTransaction();
+            foreach ($connections as $name => $database) {
+                $entryLevels[$name] = $database->transactionLevel();
+
+                // Inside the try, so a listener on Laravel's transaction-begin
+                // event that throws after PDO has already begun still reaches
+                // the rollback below instead of leaking an open transaction.
+                $database->beginTransaction();
+            }
 
             $result = $callback();
 
-            $pendingCallbacks = $this->afterCommitGuard->callbacksDiscardedByRollback($database, $entryLevel);
-        } finally {
-            // Did application code end the transaction we opened?
-            //
-            // `Connection::rollBack($toLevel)` returns without doing anything
-            // when `$toLevel` is not below the connection's own transaction
-            // count, so a webhook handler that called DB::commit() turns the
-            // line below into a silent no-op and the replay's writes become
-            // permanent — with the run still reporting PASS. Recorded here and
-            // raised after the finally, so an exception already on its way out
-            // is not swallowed by this one.
-            $ownershipLost = $database->transactionLevel() <= $entryLevel;
+            $pendingCallbacks = 0;
 
-            // A replay is a question, not a migration. Restore our entry
-            // level, including any nested transaction application code left
-            // open, without rolling back a caller-owned transaction.
-            $database->rollBack($entryLevel);
+            foreach ($connections as $name => $database) {
+                $pendingCallbacks += $this->afterCommitGuard->callbacksDiscardedByRollback($database, $entryLevels[$name]);
+            }
+        } finally {
+            $ownershipLost = false;
+            $rollbackFailure = null;
+
+            foreach ($entryLevels as $name => $entryLevel) {
+                $database = $connections[$name];
+
+                // Did application code end the transaction we opened?
+                //
+                // `Connection::rollBack($toLevel)` returns without doing
+                // anything when `$toLevel` is not below the connection's own
+                // transaction count, so a webhook handler that called
+                // DB::commit() turns the rollback below into a silent no-op and
+                // the replay's writes become permanent — with the run still
+                // reporting PASS. Recorded here and raised after the finally,
+                // so an exception already on its way out is not swallowed by
+                // this one.
+                $ownershipLost = $ownershipLost || $database->transactionLevel() <= $entryLevel;
+
+                // A replay is a question, not a migration. Restore our entry
+                // level, including any nested transaction application code left
+                // open, without rolling back a caller-owned transaction.
+                //
+                // Each connection is restored even if another one's rollback
+                // throws, so one failure cannot leave a second transaction open.
+                try {
+                    $database->rollBack($entryLevel);
+                } catch (Throwable $e) {
+                    $rollbackFailure ??= $e;
+                }
+            }
+
+            if ($rollbackFailure !== null) {
+                throw $rollbackFailure;
+            }
         }
 
         if ($ownershipLost) {
@@ -154,6 +186,29 @@ final class SimulationEnvironment
         }
 
         return $result;
+    }
+
+    /**
+     * The connections a replay rolls back, keyed by name: the billable's and
+     * the application's default, once when they are the same (ADR-0001).
+     *
+     * Cashier uses the billable model to find customers, and it may declare a
+     * non-default connection; the application's own writes usually land on the
+     * default one. Writes to any other connection are outside the guarantee —
+     * isolating every configured connection would require each configured
+     * database to be reachable just to run a replay.
+     *
+     * @return array<string, Connection>
+     */
+    private function isolatedConnections(): array
+    {
+        $connections = [];
+
+        foreach ([$this->billableConnection(), $this->databaseManager->connection()] as $connection) {
+            $connections[$connection->getName()] ??= $connection;
+        }
+
+        return $connections;
     }
 
     /**

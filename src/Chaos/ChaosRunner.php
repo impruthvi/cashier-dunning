@@ -3,7 +3,6 @@
 namespace Impruthvi\CashierDunning\Chaos;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Database\ConnectionInterface;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Runner\StepResult;
@@ -27,7 +26,6 @@ final readonly class ChaosRunner
 {
     public function __construct(
         private ReplayRunner $runner,
-        private ConnectionInterface $database,
     ) {}
 
     public function run(
@@ -85,24 +83,13 @@ final readonly class ChaosRunner
      * do with ordering — which would make the whole comparison meaningless
      * while looking like a real finding.
      *
-     * The transaction is always rolled back, including for the baseline: a
-     * chaos run is a question, not a migration.
+     * Each pass is its own replay, and the simulation environment rolls every
+     * replay back, including the baseline: a chaos run is a question, not a
+     * migration.
      */
     private function pass(Fixture $fixture, EventOrderer $orderer, int $pass, CarbonImmutable $startingAt): PassResult
     {
-        // The simulation environment also isolates the billable's connection.
-        // When it is this connection, its transaction is a nested savepoint.
-        // Keep the pass boundary for the explicitly supplied chaos connection.
-        $transactionLevel = $this->database->transactionLevel();
-        $this->database->beginTransaction();
-
-        try {
-            $report = $this->runner->run($fixture, $startingAt, $orderer, $pass);
-        } finally {
-            while ($this->database->transactionLevel() > $transactionLevel) {
-                $this->database->rollBack();
-            }
-        }
+        $report = $this->runner->run($fixture, $startingAt, $orderer, $pass);
 
         $last = $report->steps === [] ? null : $report->steps[count($report->steps) - 1];
 

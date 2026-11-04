@@ -178,9 +178,10 @@ Each replay rolls back its database writes, including the factory-created user,
 on success or failure. Repeated commands start from the same database state;
 transactions already open before replay remain open.
 
-Isolation uses the connection of Cashier's configured customer model
-(`Cashier::useCustomerModel(...)`). Your factory and billing writes must use that
-same connection. Writes to other connections are outside this rollback guarantee.
+Isolation covers two connections: the one Cashier's configured customer model
+uses (`Cashier::useCustomerModel(...)`), and your application's default
+connection. When they are the same connection it is wrapped once. Writes to any
+other connection are not isolated and persist after the replay.
 Application code that commits the simulation's transaction is detected and fails
 the run rather than silently persisting. With `--record`,
 local verification writes roll back, but resources created in the Stripe test

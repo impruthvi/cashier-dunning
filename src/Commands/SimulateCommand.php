@@ -216,10 +216,7 @@ class SimulateCommand extends Command
         $seed = is_numeric($seed) ? (int) $seed : random_int(1, 999999);
 
         try {
-            $report = (new ChaosRunner(
-                $this->runner(),
-                $this->laravel->make('db')->connection(),
-            ))->run(
+            $report = (new ChaosRunner($this->runner()))->run(
                 fixture: $fixture,
                 shuffle: (bool) $this->option('shuffle'),
                 duplicate: (bool) $this->option('duplicate'),
