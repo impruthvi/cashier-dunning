@@ -24,6 +24,8 @@ on:
       - 'composer.json'
       - 'composer.lock'
   pull_request:
+  # Release automation dispatches this for changelog PRs opened with GITHUB_TOKEN.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -51,15 +53,16 @@ jobs:
         id: filter
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           # A push only gets here through the paths filter above.
-          if [ "$EVENT" != "pull_request" ]; then
+          if [ "$EVENT" = "push" ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          # Dispatched runs compare their branch with main, just like a PR.
           if git diff --name-only "$BASE...$HEAD" \
             | grep -qE '\.php$|^\.github/workflows/run-tests\.yml$|^phpunit\.xml\.dist$|^composer\.(json|lock)$'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
