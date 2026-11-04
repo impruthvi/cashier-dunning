@@ -4,6 +4,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Impruthvi\CashierDunning\CashierDunning;
@@ -15,6 +16,7 @@ use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
+use Impruthvi\CashierDunning\Tests\Support\User;
 use Laravel\Cashier\Cashier;
 use Stripe\ApiRequestor;
 
@@ -318,3 +320,35 @@ it('registers its listeners once, however many runs there are', function () {
 
     expect(count(Event::getListeners(MessageSending::class)))->toBe($listeners);
 });
+
+it('rolls back the billable factory writes and leaves a caller transaction at its entry level', function () {
+    CashierDunning::createBillableUsing(fn () => User::factory()->create());
+    DB::beginTransaction();
+    $entryLevel = DB::transactionLevel();
+
+    try {
+        $inside = environment()->run(simulationFixture(), fn () => [DB::transactionLevel(), User::query()->count()]);
+
+        expect($inside)->toBe([$entryLevel + 1, 1])
+            ->and(DB::transactionLevel())->toBe($entryLevel)
+            ->and(User::query()->count())->toBe(0);
+    } finally {
+        DB::rollBack();
+    }
+});
+
+it('fails the run when application code ends the replay transaction', function () {
+    environment()->run(simulationFixture(), fn () => DB::commit());
+})->throws(SimulationFailed::class, SimulationFailed::replayTransactionWasEnded()->getMessage());
+
+it('fails the run when the rollback would discard after-commit callbacks', function () {
+    environment()->run(simulationFixture(), fn () => DB::afterCommit(fn () => null));
+})->throws(SimulationFailed::class, SimulationFailed::afterCommitCallbacksCannotBeObserved(1)->getMessage());
+
+it('lets an exception already on its way out through instead of an isolation failure', function () {
+    environment()->run(simulationFixture(), function () {
+        DB::commit();
+
+        throw new RuntimeException('scenario blew up');
+    });
+})->throws(RuntimeException::class, 'scenario blew up');

@@ -5,7 +5,6 @@ namespace Impruthvi\CashierDunning\Runner;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
-use Illuminate\Database\DatabaseTransactionsManager;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
@@ -13,12 +12,9 @@ use Impruthvi\CashierDunning\Entitlements\NullResolver;
 use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
-use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
-use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
-use Laravel\Cashier\Cashier;
 use Throwable;
 
 /**
@@ -45,7 +41,6 @@ final readonly class ReplayRunner
         private Repository $config,
         private Kernel $kernel,
         private EntitlementResolver $resolver,
-        private DatabaseTransactionsManager $transactions,
         private SimulationEnvironment $environment,
     ) {}
 
@@ -55,60 +50,16 @@ final readonly class ReplayRunner
         ?EventOrderer $orderer = null,
         int $pass = 0,
     ): ReplayReport {
-        // Resolve before the environment invokes the billable factory: its
-        // INSERT must be isolated too. Cashier uses this same model to find
-        // customers, and it may declare a non-default database connection.
-        $model = Cashier::$customerModel;
-        $database = (new $model)->getConnection();
-        $transactionLevel = $database->transactionLevel();
-
-        $ownershipLost = false;
-
-        try {
-            // Inside the try, so a listener on Laravel's transaction-begin
-            // event that throws after PDO has already begun still reaches the
-            // rollback below instead of leaking an open transaction.
-            $database->beginTransaction();
-
-            $report = $this->environment->run(
+        return $this->environment->run(
+            $fixture,
+            fn (SimulationContext $context): ReplayReport => $this->replay(
                 $fixture,
-                fn (SimulationContext $context): ReplayReport => $this->replay(
-                    $fixture,
-                    $context,
-                    $orderer ?? EventOrderer::inOrder(),
-                    $pass,
-                ),
-                $startingAt
-            );
-
-            $pendingCallbacks = (new AfterCommitGuard($this->transactions))
-                ->callbacksDiscardedByRollback($database, $transactionLevel);
-        } finally {
-            // Did application code end the transaction we opened?
-            //
-            // `Connection::rollBack($toLevel)` returns without doing anything
-            // when `$toLevel >= $this->transactions`, so a webhook handler that
-            // called DB::commit() turns the line below into a silent no-op and
-            // the replay's writes become permanent — with the run still
-            // reporting PASS. Recorded here and raised after the finally, so an
-            // exception already on its way out is not swallowed by this one.
-            $ownershipLost = $database->transactionLevel() <= $transactionLevel;
-
-            // A replay is a question, not a migration. Restore our entry
-            // level, including any nested transaction application code left
-            // open, without rolling back a caller-owned transaction.
-            $database->rollBack($transactionLevel);
-        }
-
-        if ($ownershipLost) {
-            throw SimulationFailed::replayTransactionWasEnded();
-        }
-
-        if ($pendingCallbacks > 0) {
-            throw SimulationFailed::afterCommitCallbacksCannotBeObserved($pendingCallbacks);
-        }
-
-        return $report;
+                $context,
+                $orderer ?? EventOrderer::inOrder(),
+                $pass,
+            ),
+            $startingAt
+        );
     }
 
     private function replay(

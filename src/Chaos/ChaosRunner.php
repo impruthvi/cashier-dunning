@@ -90,8 +90,8 @@ final readonly class ChaosRunner
      */
     private function pass(Fixture $fixture, EventOrderer $orderer, int $pass, CarbonImmutable $startingAt): PassResult
     {
-        // ReplayRunner also isolates its billable's connection. When it is
-        // this connection, its transaction is deliberately a nested savepoint.
+        // The simulation environment also isolates the billable's connection.
+        // When it is this connection, its transaction is a nested savepoint.
         // Keep the pass boundary for the explicitly supplied chaos connection.
         $transactionLevel = $this->database->transactionLevel();
         $this->database->beginTransaction();
