@@ -8,6 +8,10 @@ Records real Stripe billing lifecycles and replays them through a Laravel Cashie
 A recording of one billing lifecycle: the webhooks Stripe sent and the API responses it gave, grouped into steps along a timeline.
 _Avoid_: Recording (as a noun for the file), snapshot
 
+**Placeholder**:
+A token in a fixture that stands for a provider id, such as `{{sub_1}}`, or a point on the timeline, such as `{{t+14d}}`. Minted once when the fixture is recorded, and resolved to concrete values afresh for each replay.
+_Avoid_: Template variable, normalised id
+
 **Replay**:
 One run of a fixture through the application's real webhook route, in recorded order or a chaos ordering.
 _Avoid_: Simulation run, test run

@@ -51,6 +51,22 @@ final readonly class Step
         );
     }
 
+    /**
+     * Every distinct placeholder this step's events and API exchanges hold.
+     *
+     * @return list<PlaceholderToken>
+     */
+    public function placeholderTokens(): array
+    {
+        return Placeholder::tokensIn([
+            $this->events,
+            array_map(
+                static fn (ApiExchange $exchange): array => [$exchange->path, $exchange->matchBody, $exchange->responseBody],
+                $this->apiExchanges
+            ),
+        ]);
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {

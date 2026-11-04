@@ -38,7 +38,20 @@ final readonly class Fixture
         public Manifest $manifest,
         public array $steps,
         public int $formatVersion = self::FORMAT_VERSION,
-    ) {}
+    ) {
+        // Checked here rather than when a placeholder is resolved: by then the
+        // replay is underway inside the application's webhook handler, and a
+        // typo such as {{sub-1}} would surface as a request that matched
+        // nothing. Refused when the fixture is built, it names the step and the
+        // token instead.
+        foreach ($steps as $index => $step) {
+            foreach ($step->placeholderTokens() as $token) {
+                if (! $token->isRecognised()) {
+                    throw InvalidFixture::unrecognisedPlaceholder($index, $token->text);
+                }
+            }
+        }
+    }
 
     /** @param array<string, mixed> $data */
     public static function fromArray(array $data): self
@@ -149,26 +162,15 @@ final readonly class Fixture
     {
         $found = [];
 
-        // Encoded rather than walked. `array_walk_recursive` takes its array by
-        // reference and Step is readonly, so the payloads cannot be handed to
-        // it directly — and a placeholder is a literal string wherever it
-        // appears, so scanning the encoded form finds every one of them without
-        // caring how deeply the payload nests.
         foreach ($this->steps as $step) {
-            $encoded = json_encode([$step->events, $step->apiExchanges]);
-
-            if ($encoded === false) {
-                continue;
-            }
-
-            if (preg_match_all('/\{\{(cus_\d+)\}\}/', $encoded, $matches) > 0) {
-                foreach ($matches[1] as $id) {
-                    $found[$id] = true;
+            foreach ($step->placeholderTokens() as $token) {
+                if ($token->kind === 'cus') {
+                    $found[$token->text] = true;
                 }
             }
         }
 
-        return count($found) === 1 ? '{{'.array_key_first($found).'}}' : null;
+        return count($found) === 1 ? (string) array_key_first($found) : null;
     }
 
     /**

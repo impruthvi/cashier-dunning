@@ -5,11 +5,12 @@ namespace Impruthvi\CashierDunning\Fixtures;
 /**
  * One recorded provider API call and its response, scoped to a step.
  *
- * Matching is deliberately narrow: method, path, and an explicit set of body
- * parameters. Headers, telemetry, idempotency keys, the API base and Connect
- * account headers are all ignored, because the provider SDK varies them between
- * runs for reasons that have nothing to do with billing behaviour. Matching on
- * that noise would make replay fail for reasons unrelated to the app under test.
+ * Matching, done by FixtureHttpClient, is deliberately narrow: method, path,
+ * and an explicit set of body parameters. Headers, telemetry, idempotency keys,
+ * the API base and Connect account headers are all ignored, because the
+ * provider SDK varies them between runs for reasons that have nothing to do
+ * with billing behaviour. Matching on that noise would make replay fail for
+ * reasons unrelated to the app under test.
  *
  * Exchanges live inside a step rather than in one flat map so that a replay can
  * never serve a response that was only true later in the timeline.
@@ -54,24 +55,5 @@ final readonly class ApiExchange
                 'body' => Json::object($this->responseBody),
             ],
         ];
-    }
-
-    /** @param array<string, scalar|null> $body */
-    public function matches(string $method, string $path, array $body = []): bool
-    {
-        if (strtoupper($method) !== $this->method || $path !== $this->path) {
-            return false;
-        }
-
-        // Subset match: every parameter the fixture cares about must be present
-        // and equal. Extra parameters in the live request are ignored, because
-        // SDK versions add them without changing behaviour.
-        foreach ($this->matchBody as $key => $expected) {
-            if (! array_key_exists($key, $body) || $body[$key] !== $expected) {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

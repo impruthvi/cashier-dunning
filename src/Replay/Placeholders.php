@@ -4,6 +4,9 @@ namespace Impruthvi\CashierDunning\Replay;
 
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Duration;
+use Impruthvi\CashierDunning\Fixtures\Placeholder;
+use Impruthvi\CashierDunning\Fixtures\PlaceholderToken;
+use LogicException;
 
 /**
  * Turns the placeholders a fixture stores back into concrete values for one run.
@@ -23,10 +26,6 @@ use Impruthvi\CashierDunning\Fixtures\Duration;
  */
 final readonly class Placeholders
 {
-    private const IDENTIFIER = '/\{\{([a-z_]+?)_(\d+)\}\}/';
-
-    private const TIMESTAMP = '/\{\{t\+([0-9dhm]+)\}\}/';
-
     public function __construct(private CarbonImmutable $startedAt) {}
 
     /**
@@ -49,21 +48,20 @@ final readonly class Placeholders
      */
     public function resolveString(string $value): string|int
     {
-        if (preg_match('/^'.trim(self::TIMESTAMP, '/').'$/', $value, $matches) === 1) {
-            return $this->timestamp($matches[1]);
-        }
+        return Placeholder::replace($value, $this->concrete(...));
+    }
 
-        $value = preg_replace_callback(
-            self::TIMESTAMP,
-            fn (array $m): string => (string) $this->timestamp($m[1]),
-            $value
-        );
-
-        return (string) preg_replace_callback(
-            self::IDENTIFIER,
-            static fn (array $m): string => $m[1].'_replay'.$m[2],
-            (string) $value
-        );
+    /**
+     * A fixture holding a token the grammar cannot parse is refused when it is
+     * loaded, so meeting one here means a fixture was built some other way.
+     */
+    private function concrete(PlaceholderToken $token): string|int
+    {
+        return match (true) {
+            $token->kind !== null => $token->kind.'_replay'.$token->number,
+            $token->offset !== null => $this->startedAt->addMinutes($token->offset->minutes)->getTimestamp(),
+            default => throw new LogicException("Cannot resolve [{$token->text}]: it is not a placeholder."),
+        };
     }
 
     public function timestamp(string $offset): int
