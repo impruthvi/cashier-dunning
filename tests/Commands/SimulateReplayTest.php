@@ -51,6 +51,32 @@ it('replays the same scenario twice on one database with a fresh billable per ru
     $this->assertDatabaseCount('subscription_items', 0);
 });
 
+it('replays a scenario recorded to the default location when no fixture path is configured', function () {
+    // With fixtures.path unset, --record writes to tests/fixtures/billing. A
+    // recording that the very next replay cannot find is a recording lost.
+    registerReplayApp();
+    config()->set('cashier-dunning.fixtures.path', null);
+
+    $directory = base_path('tests/fixtures/billing/stripe');
+    $existed = is_dir($directory);
+    is_dir($directory) || mkdir($directory, 0755, true);
+    copy(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json', $directory.'/freshly-recorded.json');
+
+    try {
+        $this->artisan('billing:simulate freshly-recorded')
+            ->expectsOutputToContain('All 46 assertions passed.')
+            ->assertSuccessful();
+    } finally {
+        unlink($directory.'/freshly-recorded.json');
+
+        if (! $existed) {
+            rmdir($directory);
+            @rmdir(dirname($directory));
+            @rmdir(dirname($directory, 2));
+        }
+    }
+});
+
 it('exits non-zero when the application does not match the recording', function () {
     User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => User::first());

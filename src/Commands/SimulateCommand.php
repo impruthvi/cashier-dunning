@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
+use Impruthvi\CashierDunning\Commands\Concerns\LocatesFixtures;
 use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
@@ -27,6 +28,7 @@ use Laravel\Cashier\Cashier;
 
 class SimulateCommand extends Command
 {
+    use LocatesFixtures;
     use WritesToConsole;
 
     public $signature = 'billing:simulate
@@ -59,7 +61,7 @@ class SimulateCommand extends Command
             return $this->record();
         }
 
-        $repository = new FixtureRepository($this->fixturePath());
+        $repository = new FixtureRepository($this->applicationFixturePath());
         $scenario = $this->argument('scenario');
 
         if (! is_string($scenario) || $scenario === '') {
@@ -169,16 +171,12 @@ class SimulateCommand extends Command
 
     private function fixtureDestination(string $scenario): string
     {
-        $base = $this->fixturePath() ?? base_path('tests'.DIRECTORY_SEPARATOR.'fixtures'.DIRECTORY_SEPARATOR.'billing');
-
-        return $base.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.$scenario.'.json';
+        return $this->applicationFixturePath().DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.$scenario.'.json';
     }
 
     private function quarantineDirectory(): string
     {
-        $base = $this->fixturePath() ?? base_path('tests'.DIRECTORY_SEPARATOR.'fixtures'.DIRECTORY_SEPARATOR.'billing');
-
-        return $base.DIRECTORY_SEPARATOR.'quarantine';
+        return $this->applicationFixturePath().DIRECTORY_SEPARATOR.'quarantine';
     }
 
     private function listScenarios(FixtureRepository $repository): int
@@ -302,12 +300,5 @@ class SimulateCommand extends Command
         $key = config('cashier.secret');
 
         return is_string($key) ? $key : null;
-    }
-
-    private function fixturePath(): ?string
-    {
-        $path = config('cashier-dunning.fixtures.path');
-
-        return is_string($path) ? $path : null;
     }
 }
