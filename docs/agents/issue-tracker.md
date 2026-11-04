@@ -32,7 +32,9 @@ Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read it as in **Read an issue** above.
+Read it as in **Read an issue** above. If the body has a `## Parent` section, read the
+parent too, and pass its Testing Decisions, Out of Scope and Further Notes along with the
+ticket: they bind every child ticket, and the child does not repeat them.
 
 ## Wayfinding operations
 

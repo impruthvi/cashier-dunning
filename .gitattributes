@@ -20,6 +20,7 @@
 /phpstan.neon.dist  export-ignore
 /phpstan-baseline.neon  export-ignore
 /AGENTS.md          export-ignore
+/CODING_STANDARDS.md export-ignore
 /CLAUDE.md          export-ignore
 /GLOSSARY.md        export-ignore
 
