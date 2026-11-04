@@ -22,10 +22,28 @@ final readonly class ChaosReport
             }
         }
 
-        // A run where every pass was inapplicable proved nothing. Reporting it
-        // as success would be the same coverage theatre the runner refuses
-        // elsewhere.
-        return $this->applicablePasses() > 0;
+        // A run where every reordering was inapplicable proved nothing.
+        // Reporting it as success would be the same coverage theatre the
+        // runner refuses elsewhere.
+        return $this->rearrangedSomething();
+    }
+
+    /**
+     * Whether any pass besides the in-order baseline actually ran.
+     *
+     * The baseline always runs, so counting it would make every chaos run look
+     * like it tested an ordering — including one over steps with a single
+     * event each, where there is no order to get wrong.
+     */
+    private function rearrangedSomething(): bool
+    {
+        foreach ($this->passes as $pass) {
+            if ($pass->pass > 0 && ! $pass->notApplicable) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function applicablePasses(): int
@@ -47,7 +65,7 @@ final readonly class ChaosReport
 
     public function verdict(): string
     {
-        if ($this->applicablePasses() === 0) {
+        if (! $this->rearrangedSomething()) {
             return 'No pass changed anything. Every step has fewer than two events, '.
                 'so there was no order to get wrong.';
         }

@@ -77,9 +77,10 @@ it('survives its own recording being delivered out of order', function () {
     expect(chaos(shuffle: true, duplicate: false, iterations: 3)->passed())->toBeTrue();
 });
 
-it('reports a shuffle over single-event steps as not applicable', function () {
+it('refuses to pass a shuffle over single-event steps', function () {
     // Shuffling one event is a no-op, and calling that a passing chaos run
-    // would be coverage theatre.
+    // would be coverage theatre. The in-order baseline ran, but it is what the
+    // other passes are compared against, not a reordering of its own.
     billableUser();
 
     $fixture = Fixture::fromArray([
@@ -100,9 +101,10 @@ it('reports a shuffle over single-event steps as not applicable', function () {
         app('db')->connection(),
     ))->run($fixture, shuffle: true, duplicate: false, seed: 1, iterations: 2);
 
-    expect($report->applicablePasses())->toBe(1)
-        ->and($report->passes[1]->notApplicable)->toBeTrue()
-        ->and($report->passed())->toBeTrue();
+    expect($report->passes[1]->notApplicable)->toBeTrue()
+        ->and($report->passes[2]->notApplicable)->toBeTrue()
+        ->and($report->passed())->toBeFalse()
+        ->and($report->verdict())->toStartWith('No pass changed anything.');
 });
 
 it('names the seed so a failing ordering can be run again', function () {
