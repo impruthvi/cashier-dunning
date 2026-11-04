@@ -7,9 +7,9 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
+use Impruthvi\CashierDunning\Entitlements\EntitlementComparison;
 use Impruthvi\CashierDunning\Entitlements\EntitlementTimeline;
 use Impruthvi\CashierDunning\Entitlements\NullResolver;
-use Impruthvi\CashierDunning\Entitlements\Snapshot;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
@@ -162,6 +162,9 @@ final readonly class ReplayRunner
         $expectedEntitlements = $this->resolver instanceof NullResolver
             ? []
             : $step->entitlements;
+        $actualEntitlements = $timeline->snapshot()->toArray();
+        $comparison = EntitlementComparison::between($expectedEntitlements, $actualEntitlements);
+        $assertions += $comparison->assertions;
 
         return [
             new StepResult(
@@ -170,53 +173,11 @@ final readonly class ReplayRunner
                 advanceTo: $step->advanceTo->toString(),
                 events: $events,
                 expectedEntitlements: $expectedEntitlements,
-                actualEntitlements: $timeline->snapshot()->toArray(),
-                mismatches: $this->compareEntitlements($expectedEntitlements, $timeline->snapshot(), $assertions),
+                actualEntitlements: $actualEntitlements,
+                mismatches: $comparison->mismatches,
             ),
             $assertions,
         ];
-    }
-
-    /**
-     * Only the features the fixture declared are compared.
-     *
-     * A fixture records what one application claimed at one point in time. An
-     * application that has since added a feature the recording never mentioned
-     * has not broken anything, and failing on it would make every fixture rot
-     * the moment a plan gained a perk. A feature the fixture *did* declare going
-     * missing is the opposite: that is a revocation, and it is exactly what this
-     * package is for.
-     *
-     * @param  array<string, scalar|null>  $expected
-     * @return list<string>
-     */
-    private function compareEntitlements(array $expected, Snapshot $actual, int &$assertions): array
-    {
-        $mismatches = [];
-
-        foreach ($expected as $feature => $value) {
-            $assertions++;
-
-            if ($actual->get($feature) !== $value) {
-                $mismatches[] = sprintf(
-                    '%s: recording says %s, application says %s',
-                    $feature,
-                    $this->render($value),
-                    $this->render($actual->get($feature)),
-                );
-            }
-        }
-
-        return $mismatches;
-    }
-
-    private function render(string|int|float|bool|null $value): string
-    {
-        return match (true) {
-            $value === null => 'null',
-            is_bool($value) => $value ? 'true' : 'false',
-            default => (string) $value,
-        };
     }
 
     private function webhookPath(): string

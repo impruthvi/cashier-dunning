@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning\Reporting;
 
+use Impruthvi\CashierDunning\Entitlements\EntitlementComparison;
 use Impruthvi\CashierDunning\Runner\EventResult;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\StepResult;
@@ -111,20 +112,20 @@ final readonly class TimelineRenderer
      */
     private function renderDivergence(StepResult $step): void
     {
-        $features = array_keys($step->expectedEntitlements);
+        $comparison = EntitlementComparison::between($step->expectedEntitlements, $step->actualEntitlements);
+        $features = array_keys($comparison->rows);
         $width = max(array_map(strlen(...), [...$features, 'feature']));
 
         $this->line('');
         $this->line(sprintf('        %-'.$width.'s  %-12s  %s', 'feature', 'recording', 'application'));
 
-        foreach ($features as $feature) {
-            $expected = $this->value($step->expectedEntitlements[$feature] ?? null);
-            $actual = $this->value($step->actualEntitlements[$feature] ?? null);
-            $differs = $expected !== $actual;
+        foreach ($comparison->rows as $feature => $values) {
+            $expected = $this->value($values['expected']);
+            $actual = $this->value($values['actual']);
 
             $row = sprintf('        %-'.$width.'s  %-12s  %s', $feature, $expected, $actual);
 
-            $this->line($differs ? "<fg=red>{$row}</>" : "<fg=gray>{$row}</>");
+            $this->line($values['differs'] ? "<fg=red>{$row}</>" : "<fg=gray>{$row}</>");
         }
 
         $this->line('');

@@ -189,3 +189,30 @@ it('runs without an entitlement resolver', function () use ($start) {
             ->and($step->mismatches)->toBe([]);
     }
 });
+
+it('rejects an entitlement with the same displayed value but a different type', function () use ($start) {
+    billableUser();
+    CashierDunning::resolveEntitlementsUsing(fn (): array => ['projects' => '10']);
+
+    $fixture = Fixture::fromArray([
+        'format_version' => 1,
+        'provider' => 'stripe',
+        'scenario' => 'typed-entitlements',
+        'steps' => [[
+            'advance_to' => '0d',
+            'label' => 'projects granted',
+            'events' => [['id' => '{{evt_1}}', 'type' => 'ping', 'data' => ['object' => []]]],
+            'entitlements' => ['projects' => 10],
+        ]],
+    ]);
+
+    $report = runner()->run($fixture, $start);
+
+    expect($report->passed())->toBeFalse()
+        ->and($report->assertions)->toBe(2)
+        ->and($report->steps[0]->events[0]->status)->toBe(200)
+        ->and($report->steps[0]->expectedEntitlements)->toBe(['projects' => 10])
+        ->and($report->steps[0]->actualEntitlements)->toBe(['projects' => '10'])
+        ->and($report->steps[0]->mismatches)
+        ->toBe(['projects: recording says 10, application says 10']);
+});
