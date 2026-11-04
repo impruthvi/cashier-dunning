@@ -108,21 +108,7 @@ it('rolls back factory writes and abandoned savepoints when application code thr
 })->with(['factory', 'resolver']);
 
 it('isolates CLI replay on the configured billable non-default connection', function (bool $shuffle) {
-    config()->set('database.connections.billing', [
-        'driver' => 'sqlite',
-        'database' => ':memory:',
-        'prefix' => '',
-        'foreign_key_constraints' => true,
-    ]);
-    $this->createCashierTables('billing');
-
-    Cashier::useCustomerModel(BillingUser::class);
-    CashierDunning::createBillableUsing(fn () => BillingUser::create([
-        'name' => 'Jenny',
-        'email' => 'jenny@example.com',
-        'stripe_id' => 'cus_replay1',
-    ]));
-    registerDunningPolicy();
+    billableOnBillingConnection($this);
 
     $defaultLevel = DB::connection()->transactionLevel();
     $billingLevel = DB::connection('billing')->transactionLevel();

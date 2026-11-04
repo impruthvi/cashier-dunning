@@ -72,7 +72,7 @@ final class SimulationEnvironment
     public function __construct(
         private readonly Repository $config,
         private readonly OutboundGuard $outboundGuard,
-        private readonly DatabaseManager $databases,
+        private readonly DatabaseManager $databaseManager,
         DatabaseTransactionsManager $transactions,
     ) {
         $this->afterCommitGuard = new AfterCommitGuard($transactions);
@@ -142,9 +142,9 @@ final class SimulationEnvironment
             }
         } finally {
             $ownershipLost = false;
+            $rollbackFailure = null;
 
-            // Innermost first: the reverse of the order they were opened in.
-            foreach (array_reverse($entryLevels, true) as $name => $entryLevel) {
+            foreach ($entryLevels as $name => $entryLevel) {
                 $database = $connections[$name];
 
                 // Did application code end the transaction we opened?
@@ -162,7 +162,18 @@ final class SimulationEnvironment
                 // A replay is a question, not a migration. Restore our entry
                 // level, including any nested transaction application code left
                 // open, without rolling back a caller-owned transaction.
-                $database->rollBack($entryLevel);
+                //
+                // Each connection is restored even if another one's rollback
+                // throws, so one failure cannot leave a second transaction open.
+                try {
+                    $database->rollBack($entryLevel);
+                } catch (Throwable $e) {
+                    $rollbackFailure ??= $e;
+                }
+            }
+
+            if ($rollbackFailure !== null) {
+                throw $rollbackFailure;
             }
         }
 
@@ -193,7 +204,7 @@ final class SimulationEnvironment
     {
         $connections = [];
 
-        foreach ([$this->billableConnection(), $this->databases->connection()] as $connection) {
+        foreach ([$this->billableConnection(), $this->databaseManager->connection()] as $connection) {
             $connections[$connection->getName()] ??= $connection;
         }
 
