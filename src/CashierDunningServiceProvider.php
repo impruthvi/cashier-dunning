@@ -36,7 +36,7 @@ class CashierDunningServiceProvider extends PackageServiceProvider
 
         // Use the manager that tracks the application's actual transactions,
         // rather than autowiring a separate instance with no callbacks.
-        $this->app->when(ReplayRunner::class)
+        $this->app->when(SimulationEnvironment::class)
             ->needs(DatabaseTransactionsManager::class)
             ->give(fn ($app): DatabaseTransactionsManager => $app->make('db.transactions'));
 

@@ -14,6 +14,11 @@ use Illuminate\Support\Collection;
  * transaction commits. A replay always rolls back, so the side-effect ledger
  * cannot observe those jobs. Reporting success in that situation would claim
  * the application behaved identically without seeing what it tried to do.
+ *
+ * A private collaborator of the simulation environment, which owns the
+ * transaction these callbacks are attached to.
+ *
+ * @internal
  */
 final readonly class AfterCommitGuard
 {

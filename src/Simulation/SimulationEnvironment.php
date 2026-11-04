@@ -7,6 +7,8 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Database\Connection;
+use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -14,6 +16,7 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
 use Impruthvi\CashierDunning\Guards\OutboundGuard;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Replay\Placeholders;
@@ -25,6 +28,12 @@ use Throwable;
 /**
  * Sets up the world a replay runs in, and — the part that matters — puts it
  * back.
+ *
+ * Database writes on the billable's connection happen inside a transaction
+ * the environment opens before the billable factory runs, so the factory's
+ * own INSERT is isolated too, and that transaction is always rolled back to
+ * the caller's entry level. A transaction the caller already holds, such as
+ * a test using `RefreshDatabase`, is left exactly as it was.
  *
  * Three pieces of global state have to move for a replay to work without a
  * Stripe account:
@@ -55,10 +64,15 @@ final class SimulationEnvironment
 {
     private bool $running = false;
 
+    private readonly AfterCommitGuard $afterCommitGuard;
+
     public function __construct(
         private readonly Repository $config,
         private readonly OutboundGuard $outboundGuard,
-    ) {}
+        DatabaseTransactionsManager $transactions,
+    ) {
+        $this->afterCommitGuard = new AfterCommitGuard($transactions);
+    }
 
     /**
      * @template T
@@ -72,6 +86,87 @@ final class SimulationEnvironment
             throw SimulationFailed::alreadyRunning();
         }
 
+        $this->running = true;
+
+        try {
+            // The transaction is outermost: opened before anything else moves,
+            // so the billable factory's writes are isolated, and rolled back
+            // only once every piece of global state has been put back.
+            return $this->isolated(fn (): mixed => $this->sealed($fixture, $callback, $startingAt));
+        } finally {
+            $this->running = false;
+        }
+    }
+
+    /**
+     * Run the callback inside a transaction on the billable's connection, and
+     * always roll it back to the level it was entered at.
+     *
+     * Isolation failures are recorded during cleanup and raised only after it
+     * has finished, so an exception already on its way out is not replaced.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    private function isolated(Closure $callback): mixed
+    {
+        // Resolved before the billable factory runs: its INSERT must be
+        // isolated too. Cashier uses this same model to find customers, and it
+        // may declare a non-default database connection.
+        $database = $this->billableConnection();
+        $entryLevel = $database->transactionLevel();
+
+        try {
+            // Inside the try, so a listener on Laravel's transaction-begin
+            // event that throws after PDO has already begun still reaches the
+            // rollback below instead of leaking an open transaction.
+            $database->beginTransaction();
+
+            $result = $callback();
+
+            $pendingCallbacks = $this->afterCommitGuard->callbacksDiscardedByRollback($database, $entryLevel);
+        } finally {
+            // Did application code end the transaction we opened?
+            //
+            // `Connection::rollBack($toLevel)` returns without doing anything
+            // when `$toLevel` is not below the connection's own transaction
+            // count, so a webhook handler that called DB::commit() turns the
+            // line below into a silent no-op and the replay's writes become
+            // permanent — with the run still reporting PASS. Recorded here and
+            // raised after the finally, so an exception already on its way out
+            // is not swallowed by this one.
+            $ownershipLost = $database->transactionLevel() <= $entryLevel;
+
+            // A replay is a question, not a migration. Restore our entry
+            // level, including any nested transaction application code left
+            // open, without rolling back a caller-owned transaction.
+            $database->rollBack($entryLevel);
+        }
+
+        if ($ownershipLost) {
+            throw SimulationFailed::replayTransactionWasEnded();
+        }
+
+        if ($pendingCallbacks > 0) {
+            throw SimulationFailed::afterCommitCallbacksCannotBeObserved($pendingCallbacks);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Swap the global state a replay needs, build the billable, run the
+     * callback, and put every piece back whatever happens.
+     *
+     * @template T
+     *
+     * @param  Closure(SimulationContext): T  $callback
+     * @return T
+     */
+    private function sealed(Fixture $fixture, Closure $callback, ?CarbonImmutable $startingAt): mixed
+    {
         $credentials = EphemeralCredentials::generate();
         $startedAt = $startingAt ?? CarbonImmutable::now();
         $placeholders = new Placeholders($startedAt);
@@ -90,8 +185,6 @@ final class SimulationEnvironment
         $originalTestNow = Carbon::getTestNow();
         $originalMailers = $this->config->get('mail.mailers');
         $ledger = new SideEffectLedger;
-
-        $this->running = true;
 
         try {
             // Armed first, so a billable factory that sends mail or queues a
@@ -140,8 +233,6 @@ final class SimulationEnvironment
 
             Carbon::setTestNow($originalTestNow);
             CarbonImmutable::setTestNow($originalTestNow);
-
-            $this->running = false;
         }
     }
 
@@ -193,6 +284,14 @@ final class SimulationEnvironment
         }
 
         $container->make('mail.manager')->forgetMailers();
+    }
+
+    private function billableConnection(): Connection
+    {
+        /** @var class-string<Model> $model */
+        $model = Cashier::$customerModel;
+
+        return (new $model)->getConnection();
     }
 
     /**
