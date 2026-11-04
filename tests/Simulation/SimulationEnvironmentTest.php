@@ -2,6 +2,7 @@
 
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\DB;
@@ -352,3 +353,39 @@ it('lets an exception already on its way out through instead of an isolation fai
         throw new RuntimeException('scenario blew up');
     });
 })->throws(RuntimeException::class, 'scenario blew up');
+
+it('lets an exception already on its way out through instead of a rollback failure', function () {
+    // Laravel restores the transaction level before dispatching this event, so
+    // the rollback has happened; only the failure has to be kept from replacing
+    // the exception that caused the run to end.
+    $thrown = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$thrown): void {
+        if (! $thrown) {
+            $thrown = true;
+
+            throw new LogicException('rollback listener failed');
+        }
+    });
+
+    $entryLevel = DB::transactionLevel();
+
+    expect(fn () => environment()->run(simulationFixture(), function () {
+        throw new RuntimeException('scenario blew up');
+    }))->toThrow(RuntimeException::class, 'scenario blew up');
+
+    expect($thrown)->toBeTrue()
+        ->and(DB::transactionLevel())->toBe($entryLevel);
+});
+
+it('fails the run when a rollback throws and nothing else is on its way out', function () {
+    $thrown = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$thrown): void {
+        if (! $thrown) {
+            $thrown = true;
+
+            throw new LogicException('rollback listener failed');
+        }
+    });
+
+    environment()->run(simulationFixture(), fn () => 'completed');
+})->throws(LogicException::class, 'rollback listener failed');
