@@ -1,9 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -13,7 +11,7 @@ afterEach(fn () => CashierDunning::flush());
 
 function runner(): ReplayRunner
 {
-    return new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class));
+    return app(ReplayRunner::class);
 }
 
 function shippedDunningFixture(): Fixture

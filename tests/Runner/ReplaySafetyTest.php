@@ -1,10 +1,8 @@
 <?php
 
-use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Fixtures\Step;
@@ -33,7 +31,7 @@ function safetyReplay(): mixed
 {
     registerDunningPolicy();
 
-    return (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))
+    return app(ReplayRunner::class)
         ->run((new FixtureRepository)->find('trial-dunning-cancel-reactivate'));
 }
 

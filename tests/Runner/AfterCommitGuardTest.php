@@ -1,12 +1,10 @@
 <?php
 
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
-use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
@@ -80,7 +78,7 @@ it('fails direct chaos runs instead of returning a false clean report', function
 
     try {
         (new ChaosRunner(
-            new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)),
+            app(ReplayRunner::class),
             $database,
         ))->run(
             (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
@@ -102,11 +100,7 @@ it('does not mistake a caller transaction callback for replay work', function ()
     try {
         $database->afterCommit(static fn () => null);
 
-        $report = (new ReplayRunner(
-            config(),
-            app(Kernel::class),
-            app(EntitlementResolver::class),
-        ))->run((new FixtureRepository)->find('trial-dunning-cancel-reactivate'));
+        $report = app(ReplayRunner::class)->run((new FixtureRepository)->find('trial-dunning-cancel-reactivate'));
 
         expect($report->passed())->toBeTrue()
             ->and($database->transactionLevel())->toBe($entryLevel + 1);

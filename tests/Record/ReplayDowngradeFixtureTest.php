@@ -1,9 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
@@ -22,7 +20,7 @@ function replayDowngrade(): ReplayReport
     billableUser();
     registerPlanLimits();
 
-    return (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))
+    return app(ReplayRunner::class)
         ->run(downgradeFixture(), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 }
 
@@ -85,7 +83,7 @@ it('drives Cashier onto the smaller plan', function () {
         return $policy->resolve($user);
     });
 
-    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))
+    $report = app(ReplayRunner::class)
         ->run(downgradeFixture(), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     expect($report->passed())->toBeTrue()
