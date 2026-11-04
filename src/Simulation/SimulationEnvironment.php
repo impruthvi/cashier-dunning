@@ -38,10 +38,10 @@ use Throwable;
  *   3. The clock, so that a subscription whose trial ends in fourteen days can
  *      be observed ending.
  *
- * And outbound delivery is observed and refused for the whole run. A replay
- * drives the application's real dunning listeners, and those exist to email
- * customers; every attempt lands in a fresh ledger the context reads back as
- * side effects.
+ * And side effects are recorded, and their delivery refused, for the whole
+ * run. A replay drives the application's real dunning listeners, and those
+ * exist to email customers; every attempt lands in a fresh ledger the context
+ * reads back.
  *
  * All of these are process-global. Leaking any of them out of a simulation would
  * corrupt every test that runs afterwards — and the corruption would surface
@@ -122,6 +122,10 @@ final class SimulationEnvironment
 
             return $callback($context);
         } finally {
+            // First, so a restoration step that throws below cannot leave the
+            // guard refusing the application's mail outside a run.
+            $this->outboundGuard->disarm();
+
             // Unconditional, including on the way out of an exception. A leaked
             // transport or a frozen clock would fail some later test instead,
             // and that failure would be unreadable.
@@ -136,8 +140,6 @@ final class SimulationEnvironment
 
             Carbon::setTestNow($originalTestNow);
             CarbonImmutable::setTestNow($originalTestNow);
-
-            $this->outboundGuard->disarm();
 
             $this->running = false;
         }

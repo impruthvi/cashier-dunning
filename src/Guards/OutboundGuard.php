@@ -62,7 +62,8 @@ final class OutboundGuard
     public function __construct(private readonly Dispatcher $events) {}
 
     /**
-     * Observe outbound delivery into this ledger, and block it, until disarmed.
+     * Record side effects into this ledger, and refuse their delivery, until
+     * disarmed.
      */
     public function arm(SideEffectLedger $ledger): void
     {
@@ -71,6 +72,10 @@ final class OutboundGuard
         $this->ledger = $ledger;
     }
 
+    /**
+     * Go inert. Called in the environment's `finally`, so a run that throws
+     * cannot leave the application's own mail and notifications refused.
+     */
     public function disarm(): void
     {
         $this->ledger = null;
