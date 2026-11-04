@@ -50,4 +50,13 @@ class InvalidFixture extends RuntimeException
     {
         return new self("Step {$index} is invalid: {$reason}");
     }
+
+    public static function unrecognisedPlaceholder(int $index, string $token): self
+    {
+        return self::malformedStep(
+            $index,
+            "[{$token}] is not a placeholder this version of cashier-dunning understands. ".
+            'Expected a provider id such as {{sub_1}} or a point on the timeline such as {{t+14d}}.'
+        );
+    }
 }

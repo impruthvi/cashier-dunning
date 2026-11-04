@@ -211,13 +211,11 @@ final class Recorder
             $allowlist->applyToObject($subscription->toArray(), 'customer.subscription.updated')
         );
 
-        // The id is normalised through the same normalizer as the payload, so
-        // the path and the body agree on which placeholder the subscription got.
-        $id = $normalizer->normalize(['id' => $state->subscriptionId])['id'];
-
         return [new ApiExchange(
             method: 'GET',
-            path: '/v1/subscriptions/'.(is_string($id) ? $id : $state->subscriptionId),
+            // The same normalizer as the payload, so the path and the body
+            // agree on which placeholder the subscription got.
+            path: '/v1/subscriptions/'.$normalizer->placeholderFor($state->subscriptionId),
             matchBody: [],
             responseStatus: 200,
             responseBody: $body,

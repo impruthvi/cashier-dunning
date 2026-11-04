@@ -11,7 +11,8 @@ namespace Impruthvi\CashierDunning\Fixtures;
  * Placeholders are assigned per id-prefix in first-seen order, so recording the
  * same journey twice produces byte-identical output. Without that, every
  * re-record diffs on ids that carry no meaning, drift detection drowns in noise,
- * and nobody can review a contributed fixture.
+ * and nobody can review a contributed fixture. The token syntax itself belongs
+ * to {@see Placeholder}.
  *
  * Normalisation is one-way by design. Replay never contacts the provider, so the
  * real ids are never needed again.
@@ -32,8 +33,6 @@ final class Normalizer
         'billing_cycle_anchor', 'frozen_time',
     ];
 
-    private const ID_PATTERN = '/^(sub|cus|in|price|prod|evt|pi|pm|txn|il|si|ch|card|sub_sched|clock)_[A-Za-z0-9]+$/';
-
     /** @var array<string, string> real id => placeholder */
     private array $assigned = [];
 
@@ -49,6 +48,17 @@ final class Normalizer
     public function normalize(array $payload): array
     {
         return $this->walk($payload);
+    }
+
+    /**
+     * The placeholder for one provider id, minted in the same first-seen order
+     * as `normalize()`, so an id named outside a payload — a request path, say —
+     * gets the same placeholder the payload gave it. A string that is not a
+     * provider id comes back unchanged.
+     */
+    public function placeholderFor(string $id): string
+    {
+        return $this->placeholderForId($id);
     }
 
     /** @return array<string, string> */
@@ -97,24 +107,25 @@ final class Normalizer
 
     private function placeholderForTimestamp(int $epoch): string
     {
-        $offset = Duration::fromMinutes(intdiv(max(0, $epoch - $this->scenarioStartEpoch), 60));
-
-        return '{{t+'.$offset->toString().'}}';
+        return Placeholder::forOffset(
+            Duration::fromMinutes(intdiv(max(0, $epoch - $this->scenarioStartEpoch), 60))
+        );
     }
 
     private function placeholderForId(string $value): string
     {
-        if (preg_match(self::ID_PATTERN, $value, $matches) !== 1) {
-            return $value;
-        }
-
         if (isset($this->assigned[$value])) {
             return $this->assigned[$value];
         }
 
-        $prefix = $matches[1];
-        $number = $this->counters[$prefix] = ($this->counters[$prefix] ?? 0) + 1;
+        $kind = Placeholder::kindOf($value);
 
-        return $this->assigned[$value] = '{{'.$prefix.'_'.$number.'}}';
+        if ($kind === null) {
+            return $value;
+        }
+
+        $number = $this->counters[$kind] = ($this->counters[$kind] ?? 0) + 1;
+
+        return $this->assigned[$value] = Placeholder::forId($kind, $number);
     }
 }
