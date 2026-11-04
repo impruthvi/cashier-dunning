@@ -223,11 +223,13 @@ outright, because there is no lower seam to stop them at.
 
 **The limit — queued work is observed, not blocked.** `JobQueued` fires *after*
 Laravel has already pushed the job, so there is nothing left to refuse. On a
-`database` queue the row is inside the replay's transaction and disappears with
-it; on Redis, SQS or Beanstalk the job survives the rollback and a worker will
-run it afterwards, against data that no longer exists. **If your dunning work is
-queued, run replays with `QUEUE_CONNECTION=sync`** — then the handler runs inline
-and its mail is caught like any other.
+`database` queue whose connection is the billable's or the default one, the row
+is inside a replay transaction and disappears with it. On a `database` queue on
+any other connection, or on Redis, SQS or Beanstalk, the job survives the
+rollback and a worker will run it afterwards, against data that no longer
+exists. **If your dunning work is queued, run replays with
+`QUEUE_CONNECTION=sync`** — then the handler runs inline and its mail is caught
+like any other.
 
 **If your application commits.** A replay owns the transactions it opened on
 the billable's connection and the default connection. Code that calls
