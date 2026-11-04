@@ -1,12 +1,17 @@
 name: api-compatibility
 
-# Lists every backwards-incompatible change to the public API since the latest
-# release, so the release notes can name each one.
+# Names every backwards-incompatible change a pull request makes to the public
+# API, so the release notes can name it too.
 #
 # Release notes are written by hand when a release is published, and
 # update-changelog.yml copies them into CHANGELOG.md. A break that is only
 # described in a pull request body is easy to leave out of them. This job finds
 # them mechanically instead.
+#
+# It compares the pull request with its base, not with the latest release, so
+# it goes red on the pull request that makes a break and on no other. For the
+# whole list when writing release notes, run the same tool locally with
+# --from=<latest tag>.
 #
 # It reports and does not block: the package is 0.x, breaks are allowed, and
 # the Tests gate does not wait on this job. A red check here means "say this in
@@ -30,7 +35,7 @@ concurrency:
 
 jobs:
   backwards-compatibility:
-    name: Breaks since the latest release
+    name: Public API breaks in this pull request
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -38,7 +43,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # The checker compares against a tag, so it needs history and tags.
+          # The checker reads the base commit out of git history.
           fetch-depth: 0
 
       - name: Setup PHP
@@ -55,9 +60,10 @@ jobs:
         # not installed here.
         run: composer global require --no-interaction --no-progress "roave/backward-compatibility-check:^8.27"
 
-      - name: Compare with the latest release
+      - name: Compare with the base of this pull request
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: |
-          latest="$(git describe --tags --abbrev=0)"
-          echo "Comparing with ${latest}."
+          echo "Comparing with ${BASE}."
           "$(composer global config bin-dir --absolute)/roave-backward-compatibility-check" \
-            --from="${latest}" --format=github-actions --format=markdown
+            --from="${BASE}" --format=github-actions --format=markdown
