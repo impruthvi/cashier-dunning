@@ -39,6 +39,20 @@ class InvalidFixture extends RuntimeException
         );
     }
 
+    /**
+     * A recording that ended early is plausible and wrong: it replays green
+     * forever. So it is refused when loaded rather than quietly replayed.
+     *
+     * @param  list<string>  $missing
+     */
+    public static function incomplete(string $scenario, array $missing): self
+    {
+        return new self(
+            "Fixture for scenario [{$scenario}] is missing required events: ".implode(', ', $missing).'. '.
+            'The recording ended before its manifest was satisfied; re-record it.'
+        );
+    }
+
     public static function malformedDuration(string $value): self
     {
         return new self(

@@ -95,3 +95,30 @@ it('accepts every event in the shipped reference fixture', function () {
         }
     }
 })->throwsNoExceptions();
+
+it('redacts a recorded API response by the rules for its own kind of object', function () {
+    // Recording redacts a response and loading judges it. Both pick the rules
+    // from the object's own kind, so the two can never disagree about which
+    // list applies.
+    $subscription = subscriptionEventWithPii()['data']['object'];
+
+    expect((new Allowlist)->applyToObject($subscription))->toBe([
+        'id' => 'sub_1',
+        'object' => 'subscription',
+        'status' => 'trialing',
+        'customer' => 'cus_1',
+        'items' => ['data' => [[
+            'id' => 'si_1',
+            'quantity' => 1,
+            'price' => ['id' => 'price_1', 'recurring' => ['interval' => 'month']],
+        ]]],
+    ]);
+});
+
+it('keeps nothing but the id of a recorded object it has no rules for', function () {
+    expect((new Allowlist)->applyToObject([
+        'id' => 'pm_1',
+        'object' => 'payment_method',
+        'billing_details' => ['email' => 'jenny.rosen@example.com'],
+    ]))->toBe(['id' => 'pm_1', 'object' => 'payment_method']);
+});

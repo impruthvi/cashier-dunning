@@ -174,8 +174,9 @@ final readonly class Fixture
     }
 
     /**
-     * Every required event the manifest declared must actually be present. A
-     * recording that came up short is refused rather than quietly replayed.
+     * Required events the manifest declared that the recording never captured.
+     * A fixture with any is refused when FixtureFile loads it, rather than
+     * quietly replayed.
      *
      * @return list<string>
      */

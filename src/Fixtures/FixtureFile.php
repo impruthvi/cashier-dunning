@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning\Fixtures;
 
+use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use JsonException;
 
@@ -28,6 +29,15 @@ final class FixtureFile
         return self::decode((string) file_get_contents($path));
     }
 
+    /**
+     * Loading is where a fixture is refused, so every reader meets the same
+     * rules: replay, doctor, and anything else that reads a file. A fixture is
+     * refused when an event or a recorded API response carries a field the
+     * allowlist does not permit, or when a required event in its manifest
+     * never arrived.
+     *
+     * @throws InvalidFixture
+     */
     public static function decode(string $json): Fixture
     {
         try {
@@ -40,7 +50,36 @@ final class FixtureFile
             throw new InvalidFixture('Fixture must decode to an object.');
         }
 
-        return Fixture::fromArray($data);
+        return self::refuseUnpublishable(Fixture::fromArray($data));
+    }
+
+    private static function refuseUnpublishable(Fixture $fixture): Fixture
+    {
+        $allowlist = new Allowlist;
+
+        foreach ($fixture->steps as $index => $step) {
+            foreach ($step->events as $event) {
+                $offending = $allowlist->disallowedPaths($event);
+
+                if ($offending !== []) {
+                    throw DisallowedField::inStepEvent($index, (string) ($event['type'] ?? ''), $offending);
+                }
+            }
+
+            foreach ($step->apiExchanges as $exchange) {
+                $offending = $allowlist->disallowedPathsInObject($exchange->responseBody);
+
+                if ($offending !== []) {
+                    throw DisallowedField::inApiResponse($index, $exchange->method, $exchange->path, $offending);
+                }
+            }
+        }
+
+        if (! $fixture->satisfiesManifest()) {
+            throw InvalidFixture::incomplete($fixture->scenario, $fixture->missingRequiredEvents());
+        }
+
+        return $fixture;
     }
 
     public static function encode(Fixture $fixture): string

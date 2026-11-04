@@ -31,3 +31,11 @@ _Avoid_: User, customer (Stripe's customer is a different thing)
 **Side effect**:
 Something the application tried to do to the outside world during a replay, such as a mail, notification or queued job. Side effects are recorded and counted, and their delivery is refused.
 _Avoid_: Outbound, delivery
+
+**Allowlist**:
+The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is loaded.
+_Avoid_: Redaction list, denylist
+
+**Manifest**:
+The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when loaded.
+_Avoid_: Expected events, checklist

@@ -18,9 +18,12 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
  * than config so an application cannot weaken it.
  *
  * Two modes:
- *   apply()  - used on record. Unlisted fields are dropped, not masked.
- *   assert() - used on validate. Unlisted fields are an error, because their
- *              presence means the fixture did not come from apply().
+ *   apply(), applyToObject()  - used on record. Unlisted fields are dropped,
+ *                               not masked.
+ *   disallowedPaths(), disallowedPathsInObject(), assert() - used on load.
+ *                               Unlisted fields refuse the fixture, because
+ *                               their presence means it did not come from
+ *                               apply().
  */
 final class Allowlist
 {
@@ -54,6 +57,19 @@ final class Allowlist
         'invoice.finalized' => self::INVOICE,
     ];
 
+    /**
+     * Rules for a bare provider object, such as a recorded API response, keyed
+     * by the object's own `object` field. An object of a kind not listed here
+     * keeps nothing beyond the common fields: the allowlist fails closed.
+     *
+     * @var array<string, list<string>>
+     */
+    private const BY_OBJECT = [
+        'subscription' => self::SUBSCRIPTION,
+        'invoice' => self::INVOICE,
+        'subscription_item' => self::SUBSCRIPTION_ITEM,
+    ];
+
     /** @var list<string> */
     private const SUBSCRIPTION = [
         'data.object.status',
@@ -73,6 +89,24 @@ final class Allowlist
         // not customer data.
         'data.object.items.data.*.price.product',
         'data.object.items.data.*.price.recurring.interval',
+    ];
+
+    /**
+     * The fields a subscription already carries for each of its items, plus
+     * the item's own period and the subscription it belongs to. Cashier reads
+     * the billing period from the item, so it is plan data, not customer data.
+     *
+     * @var list<string>
+     */
+    private const SUBSCRIPTION_ITEM = [
+        'data.object.subscription',
+        'data.object.quantity',
+        'data.object.current_period_start',
+        'data.object.current_period_end',
+        'data.object.price.id',
+        'data.object.price.object',
+        'data.object.price.product',
+        'data.object.price.recurring.interval',
     ];
 
     /** @var list<string> */
@@ -102,25 +136,40 @@ final class Allowlist
     }
 
     /**
-     * Drop unpermitted fields from a bare provider object, using the rules for
-     * the event type that carries it.
+     * Drop unpermitted fields from a bare provider object, such as a recorded
+     * API response, using the rules for the object's own kind.
      *
      * A recorded API response and the webhook describing the same subscription
      * are the same data arriving by different routes, so they are redacted by
      * exactly the same list. Two lists would drift, and the one that drifted
-     * would be the one nobody was looking at.
+     * would be the one nobody was looking at. Loading a fixture judges the
+     * response by the same lookup, in disallowedPathsInObject().
      *
      * @param  array<string, mixed>  $object
      * @return array<string, mixed>
      */
-    public function applyToObject(array $object, string $eventType): array
+    public function applyToObject(array $object): array
     {
-        $filtered = $this->apply(['type' => $eventType, 'data' => ['object' => $object]]);
+        $filtered = $this->filter(['data' => ['object' => $object]], $this->permittedForObject($object));
 
         /** @var array<string, mixed> $result */
         $result = ($filtered['data'] ?? [])['object'] ?? [];
 
         return $result;
+    }
+
+    /**
+     * Fields in a bare provider object that the allowlist does not permit,
+     * judged by the rules for the object's own kind.
+     *
+     * @param  array<string, mixed>  $object
+     * @return list<string> paths relative to the object
+     */
+    public function disallowedPathsInObject(array $object): array
+    {
+        $paths = $this->collect(['data' => ['object' => $object]], $this->permittedForObject($object));
+
+        return array_map(static fn (string $path): string => substr($path, strlen('data.object.')), $paths);
     }
 
     /**
@@ -147,6 +196,20 @@ final class Allowlist
         $permitted ??= $this->permittedFor((string) ($event['type'] ?? ''));
 
         return $this->collect($event, $permitted);
+    }
+
+    /**
+     * @param  array<string, mixed>  $object
+     * @return list<string>
+     */
+    private function permittedForObject(array $object): array
+    {
+        $kind = $object['object'] ?? null;
+
+        return array_merge(
+            ['data.object.id', 'data.object.object'],
+            is_string($kind) ? (self::BY_OBJECT[$kind] ?? []) : [],
+        );
     }
 
     /** @return list<string> */
