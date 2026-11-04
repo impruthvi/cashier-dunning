@@ -41,7 +41,7 @@ final class FixtureHttpClient implements ClientInterface
     ) {}
 
     /**
-     * Point the client at a step. Called by the runner as the timeline advances;
+     * Point the client at a step as the simulation context advances the timeline;
      * everything served from now on comes from this step's recordings.
      */
     public function atStep(int $index): void

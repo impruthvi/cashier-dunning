@@ -10,6 +10,7 @@ use Impruthvi\CashierDunning\Entitlements\Exceptions\InvalidResolver;
 use Impruthvi\CashierDunning\Entitlements\NullResolver;
 use Impruthvi\CashierDunning\Guards\OutboundGuard;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
+use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -29,6 +30,7 @@ class CashierDunningServiceProvider extends PackageServiceProvider
         // then arms them per replay. Rebuilding it would stack a new set of
         // listeners on the dispatcher for every run.
         $this->app->singleton(OutboundGuard::class);
+        $this->app->singleton(SimulationEnvironment::class);
 
         $this->app->bind(ReplayRunner::class);
 

@@ -12,10 +12,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
+use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Laravel\Cashier\Cashier;
 use Stripe\ApiRequestor;
-use Stripe\HttpClient\ClientInterface;
 use Throwable;
 
 /**
@@ -39,15 +41,15 @@ use Throwable;
  * somewhere else entirely, as a test that fails only when run in a certain
  * order. So restoration happens in `finally`, unconditionally, including when
  * the callback throws.
+ *
+ * @internal
  */
 final class SimulationEnvironment
 {
-    private static bool $running = false;
+    private bool $running = false;
 
     public function __construct(
         private readonly Repository $config,
-        private readonly ?ClientInterface $httpClient = null,
-        private readonly ?string $expectedBillableStripeId = null,
     ) {}
 
     /**
@@ -56,13 +58,17 @@ final class SimulationEnvironment
      * @param  Closure(SimulationContext): T  $callback
      * @return T
      */
-    public function run(Closure $callback, ?CarbonImmutable $startingAt = null): mixed
+    public function run(Fixture $fixture, Closure $callback, ?CarbonImmutable $startingAt = null): mixed
     {
-        if (self::$running) {
+        if ($this->running) {
             throw SimulationFailed::alreadyRunning();
         }
 
         $credentials = EphemeralCredentials::generate();
+        $startedAt = $startingAt ?? CarbonImmutable::now();
+        $placeholders = new Placeholders($startedAt);
+        $client = new FixtureHttpClient($fixture, $placeholders);
+        $expectedBillableStripeId = $this->expectedBillableStripeId($fixture, $placeholders);
 
         // Captured before anything is swapped. Reading the transport instantiates
         // Stripe's default client if none was set, which is what we want to put
@@ -76,16 +82,14 @@ final class SimulationEnvironment
         $originalTestNow = Carbon::getTestNow();
         $originalMailers = $this->config->get('mail.mailers');
 
-        self::$running = true;
+        $this->running = true;
 
         try {
             $this->config->set('cashier.secret', $credentials->secret);
             $this->config->set('cashier.webhook.secret', $credentials->webhookSecret);
             $this->silenceMailTransports();
 
-            if ($this->httpClient !== null) {
-                ApiRequestor::setHttpClient($this->httpClient);
-            }
+            ApiRequestor::setHttpClient($client);
 
             // The billable is built INSIDE the swap, not before it.
             //
@@ -95,12 +99,13 @@ final class SimulationEnvironment
             // reached the developer's real Stripe account with their real key —
             // the exact thing this class exists to make impossible.
             $context = new SimulationContext(
-                billable: $this->billable(),
+                billable: $this->billable($expectedBillableStripeId),
                 credentials: $credentials,
-                startedAt: $startingAt ?? CarbonImmutable::now(),
+                startedAt: $startedAt,
+                fixture: $fixture,
+                client: $client,
+                placeholders: $placeholders,
             );
-
-            $context->advanceTo($context->position());
 
             return $callback($context);
         } finally {
@@ -119,7 +124,7 @@ final class SimulationEnvironment
             Carbon::setTestNow($originalTestNow);
             CarbonImmutable::setTestNow($originalTestNow);
 
-            self::$running = false;
+            $this->running = false;
         }
     }
 
@@ -211,7 +216,7 @@ final class SimulationEnvironment
      * application already has and asking them to write a closure that says the
      * same thing is friction for nothing.
      */
-    private function billable(): object
+    private function billable(?string $expectedBillableStripeId): object
     {
         if ($factory = CashierDunning::billableFactory()) {
             $billable = $factory();
@@ -220,7 +225,7 @@ final class SimulationEnvironment
                 throw SimulationFailed::billableFactoryReturnedNonObject(get_debug_type($billable));
             }
 
-            return $this->validatedBillable($billable);
+            return $this->validatedBillable($billable, $expectedBillableStripeId);
         }
 
         // Cashier keeps the billable model in a static, not in configuration.
@@ -238,15 +243,24 @@ final class SimulationEnvironment
                 );
             }
 
-            return $this->validatedBillable($billable);
+            return $this->validatedBillable($billable, $expectedBillableStripeId);
         }
 
         throw SimulationFailed::noBillable();
     }
 
-    private function validatedBillable(object $billable): object
+    private function expectedBillableStripeId(Fixture $fixture, Placeholders $placeholders): ?string
     {
-        if ($this->expectedBillableStripeId === null) {
+        $placeholder = $fixture->customerPlaceholder();
+
+        return $placeholder === null
+            ? null
+            : (string) $placeholders->resolveString($placeholder);
+    }
+
+    private function validatedBillable(object $billable, ?string $expectedBillableStripeId): object
+    {
+        if ($expectedBillableStripeId === null) {
             return $billable;
         }
 
@@ -254,10 +268,10 @@ final class SimulationEnvironment
             ? $billable->stripeId()
             : null;
 
-        if (! is_string($stripeId) || $stripeId !== $this->expectedBillableStripeId) {
+        if (! is_string($stripeId) || $stripeId !== $expectedBillableStripeId) {
             throw SimulationFailed::billableStripeIdDoesNotMatch(
                 $billable::class,
-                $this->expectedBillableStripeId,
+                $expectedBillableStripeId,
                 is_string($stripeId) ? $stripeId : null,
             );
         }
@@ -270,19 +284,19 @@ final class SimulationEnvironment
             throw SimulationFailed::billableIsNotEloquent($billable::class);
         }
 
-        $matches = $this->customersWithStripeId($this->expectedBillableStripeId);
+        $matches = $this->customersWithStripeId($expectedBillableStripeId);
 
         if ($matches->isEmpty()) {
             throw SimulationFailed::billableCouldNotBeResolved(
                 $billable::class,
-                $this->expectedBillableStripeId,
+                $expectedBillableStripeId,
             );
         }
 
         if ($matches->count() > 1) {
             throw SimulationFailed::billableIdIsNotUnique(
                 $matches->count(),
-                $this->expectedBillableStripeId,
+                $expectedBillableStripeId,
             );
         }
 
@@ -291,7 +305,7 @@ final class SimulationEnvironment
         if (! $billable->is($matches->first())) {
             throw SimulationFailed::billableResolvedToDifferentRecord(
                 $billable::class,
-                $this->expectedBillableStripeId,
+                $expectedBillableStripeId,
             );
         }
 

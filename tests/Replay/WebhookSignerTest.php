@@ -3,11 +3,25 @@
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Duration;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Fixtures\Manifest;
+use Impruthvi\CashierDunning\Fixtures\Provider;
+use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\WebhookSignature;
+
+beforeEach(function () {
+    $this->fixture = new Fixture(
+        provider: Provider::Stripe,
+        scenario: 'webhook-signing',
+        provenance: ['synthetic' => true],
+        manifest: new Manifest,
+        steps: [new Step(Duration::parse('30d'), 'later', [])],
+    );
+});
 
 afterEach(fn () => CashierDunning::flush());
 
@@ -42,8 +56,8 @@ it('signs with real time even when the simulation clock has moved', function () 
     // time would fail verification the moment a scenario advanced past it.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $header = (new SimulationEnvironment(config()))->run(function (SimulationContext $context) {
-        $context->advanceTo(Duration::parse('30d'));
+    $header = app(SimulationEnvironment::class)->run($this->fixture, function (SimulationContext $context) {
+        $context->enterStep(0);
 
         return (new WebhookSigner($context->credentials->webhookSecret))->sign('{"id":"evt_1"}');
     }, CarbonImmutable::parse('2026-01-01T00:00:00Z'));
@@ -89,7 +103,7 @@ it('passes Cashier webhook signature middleware end to end', function () {
     // replay and does the same work it does in production.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $response = (new SimulationEnvironment(config()))->run(function (SimulationContext $context) {
+    $response = app(SimulationEnvironment::class)->run($this->fixture, function (SimulationContext $context) {
         $signer = new WebhookSigner($context->credentials->webhookSecret);
         $envelope = $signer->envelope(['id' => 'evt_1', 'type' => 'ping', 'data' => ['object' => []]]);
 
@@ -112,7 +126,7 @@ it('is refused by Cashier when the signature is wrong', function () {
     // would pass just as well with verification switched off.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $response = (new SimulationEnvironment(config()))->run(function () {
+    $response = app(SimulationEnvironment::class)->run($this->fixture, function () {
         $envelope = (new WebhookSigner('whsec_not_the_one'))
             ->envelope(['id' => 'evt_1', 'type' => 'ping', 'data' => ['object' => []]]);
 
@@ -136,8 +150,8 @@ it('still passes Cashier verification thirty days into a scenario', function () 
     // the five minute tolerance window — which is every interesting step.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $response = (new SimulationEnvironment(config()))->run(function (SimulationContext $context) {
-        $context->advanceTo(Duration::parse('30d'));
+    $response = app(SimulationEnvironment::class)->run($this->fixture, function (SimulationContext $context) {
+        $context->enterStep(0);
 
         $envelope = (new WebhookSigner($context->credentials->webhookSecret))->envelope([
             'id' => 'evt_1',

@@ -9,6 +9,7 @@ use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Laravel\Cashier\Cashier;
+use Stripe\ApiRequestor;
 use Stripe\Exception\CardException;
 
 $start = CarbonImmutable::parse('2026-01-01T00:00:00Z');
@@ -70,16 +71,21 @@ it('answers a real Cashier call from the fixture with no network', function () u
     // StripeClient as usual, and the response comes off disk.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $client = clientFor(fixtureWithSteps([
+    $fixture = fixtureWithSteps([
         stepWith('trial', [exchange('GET', '/v1/subscriptions/{{sub_1}}')]),
-    ]), $start);
+    ]);
 
-    $subscription = (new SimulationEnvironment(config(), $client))->run(
-        fn () => Cashier::stripe()->subscriptions->retrieve('sub_replay1')
+    [$subscription, $calls] = app(SimulationEnvironment::class)->run(
+        $fixture,
+        fn () => [
+            Cashier::stripe()->subscriptions->retrieve('sub_replay1'),
+            ApiRequestor::httpClient()->calls(),
+        ],
+        $start,
     );
 
     expect($subscription->status)->toBe('past_due')
-        ->and($client->calls())->toHaveCount(1);
+        ->and($calls)->toHaveCount(1);
 
     CashierDunning::flush();
 });
@@ -191,14 +197,16 @@ it('replays a recorded error response as a real Stripe exception', function () u
     // the application as the exception it would really see.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $client = clientFor(fixtureWithSteps([
+    $fixture = fixtureWithSteps([
         stepWith('card declined', [exchange('POST', '/v1/subscriptions', [], 402, [
             'error' => ['type' => 'card_error', 'code' => 'card_declined', 'message' => 'Your card was declined.'],
         ])]),
-    ]), $start);
+    ]);
 
-    expect(fn () => (new SimulationEnvironment(config(), $client))->run(
-        fn () => Cashier::stripe()->subscriptions->create(['customer' => 'cus_replay1'])
+    expect(fn () => app(SimulationEnvironment::class)->run(
+        $fixture,
+        fn () => Cashier::stripe()->subscriptions->create(['customer' => 'cus_replay1']),
+        $start,
     ))->toThrow(CardException::class, 'Your card was declined.');
 
     CashierDunning::flush();
