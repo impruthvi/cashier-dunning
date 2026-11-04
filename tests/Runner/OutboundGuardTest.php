@@ -1,11 +1,9 @@
 <?php
 
-use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -34,7 +32,7 @@ function plainReplay(): ReplayReport
     billableUser();
     registerDunningPolicy();
 
-    return (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))
+    return app(ReplayRunner::class)
         ->run((new FixtureRepository)->find('trial-dunning-cancel-reactivate'));
 }
 

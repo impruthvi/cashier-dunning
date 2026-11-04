@@ -1,9 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
@@ -29,7 +27,7 @@ it('refuses to call a run that asserted nothing a pass', function () {
     User::create(['email' => 'a@b.com', 'stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => User::first());
 
-    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    $report = app(ReplayRunner::class)->run(
         fixtureOf([['advance_to' => '0d', 'label' => 'nothing happens', 'events' => []]]),
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );
@@ -46,7 +44,7 @@ it('counts every delivered event as an assertion', function () {
     User::create(['email' => 'a@b.com', 'stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => User::first());
 
-    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    $report = app(ReplayRunner::class)->run(
         fixtureOf([[
             'advance_to' => '0d',
             'label' => 'ping',

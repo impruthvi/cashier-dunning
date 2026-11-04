@@ -3,9 +3,9 @@
 namespace Impruthvi\CashierDunning\Runner;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Database\DatabaseTransactionsManager;
 use Impruthvi\CashierDunning\Chaos\EventOrderer;
 use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
@@ -49,6 +49,8 @@ final readonly class ReplayRunner
         private Repository $config,
         private Kernel $kernel,
         private EntitlementResolver $resolver,
+        private OutboundGuard $outboundGuard,
+        private DatabaseTransactionsManager $transactions,
     ) {}
 
     public function run(
@@ -84,7 +86,7 @@ final readonly class ReplayRunner
             // Every replay is observed and every outbound delivery is refused,
             // including the plain path. Replay drives the application's real
             // dunning listeners, and those exist to email customers.
-            $report = $this->outboundGuard()->protect(
+            $report = $this->outboundGuard->protect(
                 $ledger,
                 fn (): ReplayReport => (new SimulationEnvironment(
                     $this->config,
@@ -104,7 +106,7 @@ final readonly class ReplayRunner
                 )
             );
 
-            $pendingCallbacks = $this->afterCommitGuard()
+            $pendingCallbacks = (new AfterCommitGuard($this->transactions))
                 ->callbacksDiscardedByRollback($database, $transactionLevel);
         } finally {
             // Did application code end the transaction we opened?
@@ -317,22 +319,5 @@ final readonly class ReplayRunner
         return $placeholder === null
             ? null
             : (string) $placeholders->resolveString($placeholder);
-    }
-
-    private function afterCommitGuard(): AfterCommitGuard
-    {
-        $transactions = Container::getInstance()->make('db.transactions');
-
-        return new AfterCommitGuard($transactions);
-    }
-
-    /**
-     * Resolved from the container rather than constructed, because the guard
-     * registers event listeners once and then arms and disarms them. A fresh
-     * instance per replay would stack a new set on every run.
-     */
-    private function outboundGuard(): OutboundGuard
-    {
-        return Container::getInstance()->make(OutboundGuard::class);
     }
 }

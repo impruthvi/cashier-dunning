@@ -3,12 +3,10 @@
 namespace Impruthvi\CashierDunning\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
 use Impruthvi\CashierDunning\Commands\Concerns\LocatesFixtures;
 use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
@@ -294,11 +292,7 @@ class SimulateCommand extends Command
 
     private function runner(): ReplayRunner
     {
-        return new ReplayRunner(
-            config(),
-            $this->laravel->make(Kernel::class),
-            $this->laravel->make(EntitlementResolver::class),
-        );
+        return $this->laravel->make(ReplayRunner::class);
     }
 
     private function stripeKey(): ?string

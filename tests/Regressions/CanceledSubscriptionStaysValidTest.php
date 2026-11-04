@@ -1,9 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -59,7 +57,7 @@ afterEach(fn () => CashierDunning::flush());
 
 function replayEarlyCancellation(): ReplayReport
 {
-    return (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    return app(ReplayRunner::class)->run(
         (new FixtureRepository)->find('cancel-at-period-end-then-canceled-early'),
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );

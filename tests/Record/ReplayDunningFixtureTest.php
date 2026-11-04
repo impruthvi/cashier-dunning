@@ -1,9 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
@@ -24,7 +22,7 @@ it('replays a fixture this package recorded from real Stripe', function () {
 
     $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
-    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    $report = app(ReplayRunner::class)->run(
         $fixture,
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );
@@ -53,7 +51,7 @@ it('drives Cashier to the state real Stripe ended in', function () {
         return $policy->resolve($user);
     });
 
-    $report = (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+    $report = app(ReplayRunner::class)->run(
         (new FixtureRepository)->find('trial-dunning-cancel-reactivate'),
         CarbonImmutable::parse('2026-01-01T00:00:00Z')
     );

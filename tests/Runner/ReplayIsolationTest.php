@@ -1,10 +1,8 @@
 <?php
 
-use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\Facades\DB;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\BillingUser;
@@ -38,7 +36,7 @@ it('preserves caller transactions and existing billing rows', function (bool $ch
         billableUser();
         registerDunningPolicy();
 
-        $runner = new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class));
+        $runner = app(ReplayRunner::class);
         $fixture = (new FixtureRepository)->find('trial-dunning-cancel-reactivate');
 
         $report = $chaos
@@ -87,7 +85,7 @@ it('rolls back factory writes and abandoned savepoints when application code thr
         $caught = null;
 
         try {
-            (new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)))->run(
+            app(ReplayRunner::class)->run(
                 (new FixtureRepository)->find('trial-dunning-cancel-reactivate')
             );
         } catch (RuntimeException $exception) {

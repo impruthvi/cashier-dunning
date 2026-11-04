@@ -1,8 +1,6 @@
 <?php
 
-use Illuminate\Contracts\Http\Kernel;
 use Impruthvi\CashierDunning\CashierDunning;
-use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
@@ -40,7 +38,7 @@ function recordAndWrite(string $scenarioName): Fixture
             quarantineDirectory: dirname(__DIR__, 2).'/fixtures/quarantine',
             eventTimeoutSeconds: (int) (env('CASHIER_DUNNING_EVENT_TIMEOUT') ?? 25),
         ),
-        new ReplayRunner(config(), app(Kernel::class), app(EntitlementResolver::class)),
+        app(ReplayRunner::class),
     ))->record($scenario);
 
     expect($fixture->satisfiesManifest())->toBeTrue()
