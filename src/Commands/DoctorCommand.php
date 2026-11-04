@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Commands;
 
 use Illuminate\Console\Command;
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Commands\Concerns\LocatesFixtures;
 use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Fixtures\Allowlist;
@@ -26,6 +27,7 @@ use Throwable;
  */
 class DoctorCommand extends Command
 {
+    use LocatesFixtures;
     use WritesToConsole;
 
     public $signature = 'billing:doctor';
@@ -136,8 +138,7 @@ class DoctorCommand extends Command
 
     private function checkFixtures(): void
     {
-        $path = config('cashier-dunning.fixtures.path');
-        $repository = new FixtureRepository(is_string($path) ? $path : null);
+        $repository = new FixtureRepository($this->applicationFixturePath());
 
         $files = $repository->files();
 
@@ -185,8 +186,7 @@ class DoctorCommand extends Command
      */
     private function checkScenarios(): void
     {
-        $path = config('cashier-dunning.fixtures.path');
-        $recorded = array_keys((new FixtureRepository(is_string($path) ? $path : null))->scenarios());
+        $recorded = array_keys((new FixtureRepository($this->applicationFixturePath()))->scenarios());
 
         foreach ((new ScenarioRepository)->all() as $name => $scenario) {
             in_array($name, $recorded, true)

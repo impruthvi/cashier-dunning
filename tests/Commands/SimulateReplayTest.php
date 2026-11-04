@@ -51,6 +51,32 @@ it('replays the same scenario twice on one database with a fresh billable per ru
     $this->assertDatabaseCount('subscription_items', 0);
 });
 
+it('replays a scenario recorded to the default location when no fixture path is configured', function () {
+    // With fixtures.path unset, --record writes to tests/fixtures/billing. A
+    // recording that the very next replay cannot find is a recording lost.
+    registerReplayApp();
+    config()->set('cashier-dunning.fixtures.path', null);
+
+    $directory = base_path('tests/fixtures/billing/stripe');
+    $existed = is_dir($directory);
+    is_dir($directory) || mkdir($directory, 0755, true);
+    copy(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json', $directory.'/freshly-recorded.json');
+
+    try {
+        $this->artisan('billing:simulate freshly-recorded')
+            ->expectsOutputToContain('All 46 assertions passed.')
+            ->assertSuccessful();
+    } finally {
+        unlink($directory.'/freshly-recorded.json');
+
+        if (! $existed) {
+            rmdir($directory);
+            @rmdir(dirname($directory));
+            @rmdir(dirname($directory, 2));
+        }
+    }
+});
+
 it('exits non-zero when the application does not match the recording', function () {
     User::create(['name' => 'Jenny', 'email' => 'jenny@example.com', 'stripe_id' => 'cus_replay1']);
     CashierDunning::createBillableUsing(fn () => User::first());
@@ -222,6 +248,31 @@ it('shows the failing step and event when a chaos replay itself fails', function
         ->expectsOutputToContain('FAIL +0d  trial starts')
         ->expectsOutputToContain('customer.subscription.created')
         ->expectsOutputToContain('feature')
+        ->assertFailed();
+});
+
+it('reports a guard failure during a chaos pass instead of crashing', function () {
+    // The ordered pass gets a correct billable; the chaos baseline gets one
+    // the guard rejects. The command must say why and exit non-zero, the same
+    // as it does when the ordered pass itself is refused.
+    $factoryCalls = 0;
+    CashierDunning::createBillableUsing(function () use (&$factoryCalls): User {
+        $factoryCalls++;
+
+        return User::factory()->create([
+            'stripe_id' => $factoryCalls === 1 ? 'cus_replay1' : 'cus_wrong',
+        ]);
+    });
+    registerDunningPolicy();
+
+    $this->artisan('billing:simulate', [
+        'scenario' => 'trial-dunning-cancel-reactivate',
+        '--shuffle' => true,
+        '--iterations' => 1,
+        '--seed' => 7,
+    ])
+        ->expectsOutputToContain('All 46 assertions passed.')
+        ->expectsOutputToContain('fixture webhooks target stripe_id [cus_replay1]')
         ->assertFailed();
 });
 
