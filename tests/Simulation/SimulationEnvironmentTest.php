@@ -3,6 +3,9 @@
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Mail;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Manifest;
@@ -271,4 +274,47 @@ it('intercepts a real Cashier Stripe call without touching the network', functio
     );
 
     expect($customer->id)->toBe('cus_replayed');
+});
+
+it('records the side effects of a run and refuses their delivery', function () {
+    config()->set('mail.default', 'array');
+
+    [$sideEffects, $blocked] = environment()->run(simulationFixture(), function (SimulationContext $context): array {
+        Mail::raw('dunning', fn ($message) => $message->to('jenny@example.com'));
+        Mail::raw('dunning', fn ($message) => $message->to('jenny@example.com'));
+
+        return [$context->sideEffects(), $context->blockedDeliveries()];
+    });
+
+    expect($sideEffects)->toBe(['mail:jenny@example.com' => 2])
+        ->and($blocked)->toBe(2)
+        ->and(Mail::getSymfonyTransport()->messages()->count())->toBe(0);
+});
+
+it('starts every run with no side effects', function () {
+    config()->set('mail.default', 'array');
+
+    environment()->run(simulationFixture(), fn () => Mail::raw('first', fn ($message) => $message->to('first@example.com')));
+
+    expect(environment()->run(simulationFixture(), fn (SimulationContext $context): array => $context->sideEffects()))->toBe([]);
+});
+
+it('observes nothing outside a run', function () {
+    config()->set('mail.default', 'array');
+
+    $context = environment()->run(simulationFixture(), fn (SimulationContext $context) => $context);
+
+    Mail::raw('after', fn ($message) => $message->to('after@example.com'));
+
+    expect($context->sideEffects())->toBe([]);
+});
+
+it('registers its listeners once, however many runs there are', function () {
+    environment()->run(simulationFixture(), fn () => null);
+    $listeners = count(Event::getListeners(MessageSending::class));
+
+    environment()->run(simulationFixture(), fn () => null);
+    environment()->run(simulationFixture(), fn () => null);
+
+    expect(count(Event::getListeners(MessageSending::class)))->toBe($listeners);
 });

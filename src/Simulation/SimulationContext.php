@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Simulation;
 
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Impruthvi\CashierDunning\Chaos\SideEffectLedger;
 use Impruthvi\CashierDunning\Fixtures\Duration;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
@@ -29,6 +30,7 @@ final class SimulationContext
         private readonly Fixture $fixture,
         private readonly FixtureHttpClient $client,
         private readonly Placeholders $placeholders,
+        private readonly SideEffectLedger $ledger,
     ) {
         $this->advanceTo(Duration::fromMinutes(0));
     }
@@ -65,6 +67,25 @@ final class SimulationContext
         CarbonImmutable::setTestNow($moment);
 
         return $moment;
+    }
+
+    /**
+     * What the application has tried to do to the outside world so far this
+     * run, counted by kind. See {@see SideEffectLedger::signature()}.
+     *
+     * @return array<string, int>
+     */
+    public function sideEffects(): array
+    {
+        return $this->ledger->signature();
+    }
+
+    /**
+     * How many of those side effects had their delivery refused.
+     */
+    public function blockedDeliveries(): int
+    {
+        return $this->ledger->blocked();
     }
 
     public function position(): Duration
