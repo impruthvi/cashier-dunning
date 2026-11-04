@@ -22,6 +22,8 @@ use Random\RandomException;
  * The useful consequence is that a replay physically cannot use the
  * application's real key: for the duration of the run, the real one is not in
  * configuration to be read.
+ *
+ * @internal
  */
 final readonly class EphemeralCredentials
 {

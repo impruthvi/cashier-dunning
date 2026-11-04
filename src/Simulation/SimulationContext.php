@@ -5,6 +5,9 @@ namespace Impruthvi\CashierDunning\Simulation;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Duration;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
+use Impruthvi\CashierDunning\Replay\Placeholders;
 
 /**
  * The handle a running simulation gets: who is being billed, with what
@@ -12,6 +15,8 @@ use Impruthvi\CashierDunning\Fixtures\Duration;
  *
  * Handed to the callback rather than reachable statically, so nothing can hold
  * onto it after the environment has torn its global state back down.
+ *
+ * @internal
  */
 final class SimulationContext
 {
@@ -21,8 +26,26 @@ final class SimulationContext
         public readonly object $billable,
         public readonly EphemeralCredentials $credentials,
         public readonly CarbonImmutable $startedAt,
+        private readonly Fixture $fixture,
+        private readonly FixtureHttpClient $client,
+        private readonly Placeholders $placeholders,
     ) {
-        $this->position = Duration::fromMinutes(0);
+        $this->advanceTo(Duration::fromMinutes(0));
+    }
+
+    public function enterStep(int $index): void
+    {
+        $this->client->atStep($index);
+        $this->advanceTo($this->fixture->steps[$index]->advanceTo);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function resolvePlaceholders(array $payload): array
+    {
+        return $this->placeholders->resolve($payload);
     }
 
     /**
@@ -32,7 +55,7 @@ final class SimulationContext
      * a fixture that advanced only one of them would leave `now()` disagreeing
      * with itself halfway through a dunning window.
      */
-    public function advanceTo(Duration $offset): CarbonImmutable
+    private function advanceTo(Duration $offset): CarbonImmutable
     {
         $this->position = $offset;
 

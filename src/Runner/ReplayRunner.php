@@ -16,8 +16,6 @@ use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Guards\AfterCommitGuard;
 use Impruthvi\CashierDunning\Guards\OutboundGuard;
-use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
-use Impruthvi\CashierDunning\Replay\Placeholders;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
@@ -51,6 +49,7 @@ final readonly class ReplayRunner
         private EntitlementResolver $resolver,
         private OutboundGuard $outboundGuard,
         private DatabaseTransactionsManager $transactions,
+        private SimulationEnvironment $environment,
     ) {}
 
     public function run(
@@ -59,14 +58,6 @@ final readonly class ReplayRunner
         ?EventOrderer $orderer = null,
         int $pass = 0,
     ): ReplayReport {
-        // Fixed before anything else, because the placeholder resolver and the
-        // simulation clock have to agree on when the scenario begins. A fixture
-        // timestamp of {{t+14d}} means nothing if they disagree.
-        $startedAt = $startingAt ?? CarbonImmutable::now();
-
-        $placeholders = new Placeholders($startedAt);
-        $client = new FixtureHttpClient($fixture, $placeholders);
-
         // Resolve before the environment invokes the billable factory: its
         // INSERT must be isolated too. Cashier uses this same model to find
         // customers, and it may declare a non-default database connection.
@@ -88,21 +79,16 @@ final readonly class ReplayRunner
             // dunning listeners, and those exist to email customers.
             $report = $this->outboundGuard->protect(
                 $ledger,
-                fn (): ReplayReport => (new SimulationEnvironment(
-                    $this->config,
-                    $client,
-                    $this->expectedBillableStripeId($fixture, $placeholders),
-                ))->run(
+                fn (): ReplayReport => $this->environment->run(
+                    $fixture,
                     fn (SimulationContext $context): ReplayReport => $this->replay(
                         $fixture,
                         $context,
-                        $client,
-                        $placeholders,
                         $orderer ?? EventOrderer::inOrder(),
                         $pass,
                         $ledger,
                     ),
-                    $startedAt
+                    $startingAt
                 )
             );
 
@@ -139,8 +125,6 @@ final readonly class ReplayRunner
     private function replay(
         Fixture $fixture,
         SimulationContext $context,
-        FixtureHttpClient $client,
-        Placeholders $placeholders,
         EventOrderer $orderer,
         int $pass,
         SideEffectLedger $ledger,
@@ -158,15 +142,14 @@ final readonly class ReplayRunner
         $completed = true;
 
         foreach ($fixture->steps as $index => $step) {
-            $context->advanceTo($step->advanceTo);
-            $client->atStep($index);
+            $context->enterStep($index);
 
             [$result, $stepAssertions] = $this->replayStep(
                 $step,
                 $index,
                 $delivery,
                 $timeline,
-                $placeholders,
+                $context,
                 $orderer,
                 $pass,
             );
@@ -197,7 +180,7 @@ final readonly class ReplayRunner
         int $index,
         WebhookDelivery $delivery,
         EntitlementTimeline $timeline,
-        Placeholders $placeholders,
+        SimulationContext $context,
         EventOrderer $orderer,
         int $pass,
     ): array {
@@ -205,8 +188,7 @@ final readonly class ReplayRunner
         $assertions = 0;
 
         foreach ($orderer->apply($step->events, $index, $pass) as $event) {
-            /** @var array<string, mixed> $payload */
-            $payload = $placeholders->resolve($event);
+            $payload = $context->resolvePlaceholders($event);
 
             try {
                 $response = $delivery->deliver($payload);
@@ -303,21 +285,5 @@ final readonly class ReplayRunner
         $prefix = $this->config->get('cashier.path');
 
         return '/'.trim(is_string($prefix) ? $prefix : 'stripe', '/').'/webhook';
-    }
-
-    /**
-     * The stripe_id the fixture's webhooks are actually addressed to.
-     *
-     * Read from the recording rather than assumed. Null when the fixture names
-     * no customer or more than one, which stands the preflight down instead of
-     * failing a run for not matching an id the recording never used.
-     */
-    private function expectedBillableStripeId(Fixture $fixture, Placeholders $placeholders): ?string
-    {
-        $placeholder = $fixture->customerPlaceholder();
-
-        return $placeholder === null
-            ? null
-            : (string) $placeholders->resolveString($placeholder);
     }
 }
