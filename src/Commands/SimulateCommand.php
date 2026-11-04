@@ -217,16 +217,22 @@ class SimulateCommand extends Command
         $seed = $this->option('seed');
         $seed = is_numeric($seed) ? (int) $seed : random_int(1, 999999);
 
-        $report = (new ChaosRunner(
-            $this->runner(),
-            $this->laravel->make('db')->connection(),
-        ))->run(
-            fixture: $fixture,
-            shuffle: (bool) $this->option('shuffle'),
-            duplicate: (bool) $this->option('duplicate'),
-            seed: $seed,
-            iterations: max(1, (int) $this->option('iterations')),
-        );
+        try {
+            $report = (new ChaosRunner(
+                $this->runner(),
+                $this->laravel->make('db')->connection(),
+            ))->run(
+                fixture: $fixture,
+                shuffle: (bool) $this->option('shuffle'),
+                duplicate: (bool) $this->option('duplicate'),
+                seed: $seed,
+                iterations: max(1, (int) $this->option('iterations')),
+            );
+        } catch (SimulationFailed $e) {
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
 
         $this->renderChaos($report);
 
