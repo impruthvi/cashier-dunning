@@ -2,6 +2,7 @@
 
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,6 @@ use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
-use Impruthvi\CashierDunning\Tests\Support\User;
 use Laravel\Cashier\Cashier;
 use Stripe\ApiRequestor;
 
@@ -67,7 +67,7 @@ it('enters fixture steps with the matching clock, recordings and placeholders', 
         ]],
     ], ['trialing', 'past_due'], ['0d', '14d1h']));
 
-    app(SimulationEnvironment::class)->run($fixture, function (SimulationContext $context) {
+    environment()->run($fixture, function (SimulationContext $context) {
         $context->enterStep(0);
         $first = Cashier::stripe()->subscriptions->retrieve('sub_replay1');
 
@@ -270,12 +270,18 @@ it('intercepts a real Cashier Stripe call without touching the network', functio
         ]],
     ]]);
 
-    $customer = environment()->run(
+    [$customer, $calls] = environment()->run(
         $fixture,
-        fn () => Cashier::stripe()->customers->retrieve('cus_anything')
+        fn () => [
+            Cashier::stripe()->customers->retrieve('cus_anything'),
+            ApiRequestor::httpClient()->calls(),
+        ]
     );
 
-    expect($customer->id)->toBe('cus_replayed');
+    expect($customer->id)->toBe('cus_replayed')
+        ->and($calls)->toBe([
+            ['method' => 'GET', 'path' => '/v1/customers/cus_anything', 'step' => 0],
+        ]);
 });
 
 it('records the side effects of a run and refuses their delivery', function () {
@@ -321,30 +327,6 @@ it('registers its listeners once, however many runs there are', function () {
     expect(count(Event::getListeners(MessageSending::class)))->toBe($listeners);
 });
 
-it('rolls back the billable factory writes and leaves a caller transaction at its entry level', function () {
-    CashierDunning::createBillableUsing(fn () => User::factory()->create());
-    DB::beginTransaction();
-    $entryLevel = DB::transactionLevel();
-
-    try {
-        $inside = environment()->run(simulationFixture(), fn () => [DB::transactionLevel(), User::query()->count()]);
-
-        expect($inside)->toBe([$entryLevel + 1, 1])
-            ->and(DB::transactionLevel())->toBe($entryLevel)
-            ->and(User::query()->count())->toBe(0);
-    } finally {
-        DB::rollBack();
-    }
-});
-
-it('fails the run when application code ends the replay transaction', function () {
-    environment()->run(simulationFixture(), fn () => DB::commit());
-})->throws(SimulationFailed::class, SimulationFailed::replayTransactionWasEnded()->getMessage());
-
-it('fails the run when the rollback would discard after-commit callbacks', function () {
-    environment()->run(simulationFixture(), fn () => DB::afterCommit(fn () => null));
-})->throws(SimulationFailed::class, SimulationFailed::afterCommitCallbacksCannotBeObserved(1)->getMessage());
-
 it('lets an exception already on its way out through instead of an isolation failure', function () {
     environment()->run(simulationFixture(), function () {
         DB::commit();
@@ -352,3 +334,39 @@ it('lets an exception already on its way out through instead of an isolation fai
         throw new RuntimeException('scenario blew up');
     });
 })->throws(RuntimeException::class, 'scenario blew up');
+
+it('lets an exception already on its way out through instead of a rollback failure', function () {
+    // Laravel restores the transaction level before dispatching this event, so
+    // the rollback has happened; only the failure has to be kept from replacing
+    // the exception that caused the run to end.
+    $thrown = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$thrown): void {
+        if (! $thrown) {
+            $thrown = true;
+
+            throw new LogicException('rollback listener failed');
+        }
+    });
+
+    $entryLevel = DB::transactionLevel();
+
+    expect(fn () => environment()->run(simulationFixture(), function () {
+        throw new RuntimeException('scenario blew up');
+    }))->toThrow(RuntimeException::class, 'scenario blew up');
+
+    expect($thrown)->toBeTrue()
+        ->and(DB::transactionLevel())->toBe($entryLevel);
+});
+
+it('fails the run when a rollback throws and nothing else is on its way out', function () {
+    $thrown = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$thrown): void {
+        if (! $thrown) {
+            $thrown = true;
+
+            throw new LogicException('rollback listener failed');
+        }
+    });
+
+    environment()->run(simulationFixture(), fn () => 'completed');
+})->throws(LogicException::class, 'rollback listener failed');

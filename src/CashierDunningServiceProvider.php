@@ -9,7 +9,6 @@ use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\Exceptions\InvalidResolver;
 use Impruthvi\CashierDunning\Entitlements\NullResolver;
 use Impruthvi\CashierDunning\Guards\OutboundGuard;
-use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -31,8 +30,6 @@ class CashierDunningServiceProvider extends PackageServiceProvider
         // listeners on the dispatcher for every run.
         $this->app->singleton(OutboundGuard::class);
         $this->app->singleton(SimulationEnvironment::class);
-
-        $this->app->bind(ReplayRunner::class);
 
         // Use the manager that tracks the application's actual transactions,
         // rather than autowiring a separate instance with no callbacks.

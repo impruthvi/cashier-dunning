@@ -182,8 +182,8 @@ Isolation covers two connections: the one Cashier's configured customer model
 uses (`Cashier::useCustomerModel(...)`), and your application's default
 connection. When they are the same connection it is wrapped once. Writes to any
 other connection are not isolated and persist after the replay.
-Application code that commits the simulation's transaction is detected and fails
-the run rather than silently persisting. With `--record`,
+Application code that commits either of the simulation's transactions is
+detected and fails the run rather than silently persisting. With `--record`,
 local verification writes roll back, but resources created in the Stripe test
 account remain there.
 
@@ -229,9 +229,10 @@ run it afterwards, against data that no longer exists. **If your dunning work is
 queued, run replays with `QUEUE_CONNECTION=sync`** — then the handler runs inline
 and its mail is caught like any other.
 
-**If your application commits.** A replay owns the transaction it opened. Code
-that calls `DB::commit()` or `DB::rollBack()` on that connection takes it away,
-and the rollback afterwards becomes a no-op that leaves real rows behind. The run
+**If your application commits.** A replay owns the transactions it opened on
+the billable's connection and the default connection. Code that calls
+`DB::commit()` or `DB::rollBack()` on either connection takes that transaction
+away, and the rollback afterwards becomes a no-op that leaves real rows behind. The run
 now checks and fails with a named error rather than reporting PASS over
 persisted data.
 

@@ -123,6 +123,8 @@ final class SimulationEnvironment
         /** @var array<string, int> $entryLevels */
         $entryLevels = [];
 
+        $exceptionInFlight = false;
+
         try {
             foreach ($connections as $name => $database) {
                 $entryLevels[$name] = $database->transactionLevel();
@@ -140,6 +142,10 @@ final class SimulationEnvironment
             foreach ($connections as $name => $database) {
                 $pendingCallbacks += $this->afterCommitGuard->callbacksDiscardedByRollback($database, $entryLevels[$name]);
             }
+        } catch (Throwable $e) {
+            $exceptionInFlight = true;
+
+            throw $e;
         } finally {
             $ownershipLost = false;
             $rollbackFailure = null;
@@ -172,7 +178,10 @@ final class SimulationEnvironment
                 }
             }
 
-            if ($rollbackFailure !== null) {
+            // Throwing from `finally` would replace an exception already on its
+            // way out, and that exception is the one that explains why the run
+            // ended. The run still fails either way.
+            if ($rollbackFailure !== null && ! $exceptionInFlight) {
                 throw $rollbackFailure;
             }
         }
