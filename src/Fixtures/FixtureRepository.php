@@ -36,6 +36,12 @@ final readonly class FixtureRepository
 
         foreach ($this->paths() as $path) {
             foreach (glob($path.'/*/*.json') ?: [] as $file) {
+                // A failed recording is quarantined beside the fixtures for
+                // diagnosis. It never completed, so it is not one of them.
+                if (str_ends_with($file, '.quarantine.json')) {
+                    continue;
+                }
+
                 $files[] = $file;
             }
         }
