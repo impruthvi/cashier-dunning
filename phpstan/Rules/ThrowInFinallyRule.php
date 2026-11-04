@@ -1,6 +1,6 @@
 <?php
 
-namespace Impruthvi\CashierDunning\Tests\PHPStan\Rules;
+namespace Impruthvi\CashierDunning\PHPStan\Rules;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr\Throw_;

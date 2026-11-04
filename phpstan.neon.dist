@@ -10,4 +10,4 @@ parameters:
 
 rules:
     # A throw in `finally` replaces the exception already on its way out (#34).
-    - Impruthvi\CashierDunning\Tests\PHPStan\Rules\ThrowInFinallyRule
+    - Impruthvi\CashierDunning\PHPStan\Rules\ThrowInFinallyRule

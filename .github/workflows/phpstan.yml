@@ -5,6 +5,7 @@ on:
     paths:
       - '**.php'
       - 'phpstan.neon.dist'
+      - 'phpstan/**'
       - '.github/workflows/phpstan.yml'
 
 jobs:
@@ -26,3 +27,7 @@ jobs:
 
       - name: Run PHPStan
         run: ./vendor/bin/phpstan --error-format=github
+
+      - name: Test the project's PHPStan rules
+        # Outside the package suite: PHPStan's container would leave it short of memory.
+        run: ./vendor/bin/phpunit -c phpstan/phpunit.xml.dist

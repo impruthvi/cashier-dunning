@@ -1,12 +1,17 @@
 <?php
 
-namespace Impruthvi\CashierDunning\Tests\PHPStan\Rules;
+namespace Impruthvi\CashierDunning\PHPStan\Tests;
 
+use Impruthvi\CashierDunning\PHPStan\Rules\ThrowInFinallyRule;
 use PHPStan\Rules\Rule;
 use PHPStan\Testing\RuleTestCase;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 
 /**
+ * Run with `vendor/bin/phpunit -c phpstan/phpunit.xml.dist`, not the package suite:
+ * PHPStan's container is large and cached statically, and built inside the
+ * package suite it leaves the remaining tests short of memory.
+ *
  * @extends RuleTestCase<ThrowInFinallyRule>
  */
 final class ThrowInFinallyRuleTest extends RuleTestCase
