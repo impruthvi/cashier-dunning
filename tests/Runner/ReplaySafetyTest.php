@@ -23,7 +23,6 @@ use Stripe\ApiRequestor;
  */
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
-    CashierDunning::flush();
     DunningMailer::reset();
 });
 

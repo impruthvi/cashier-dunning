@@ -9,14 +9,15 @@ name: api-compatibility
 # them mechanically instead.
 #
 # It compares the pull request with its base, not with the latest release, so
-# it goes red on the pull request that makes a break and on no other. For the
+# it reports a break on the pull request that makes it and on no other. For the
 # whole list when writing release notes, run the same tool locally with
 # --from=<latest tag>.
 #
-# It reports and does not block: the package is 0.x, breaks are allowed, and
-# the Tests gate does not wait on this job. A red check here means "say this in
-# the release notes", not "undo it". Mark a class @internal to take it out of
-# the public API, and out of this report.
+# It reports and does not block: the package is 0.x and breaks are allowed. A
+# break is a yellow warning on a green check, listed in the job summary, and it
+# means "say this in the release notes", not "undo it". The check goes red only
+# when the checker itself fails, so red keeps meaning something is broken. Mark
+# a class @internal to take it out of the public API, and out of this report.
 #
 # Needs no secrets, like run-tests.yml.
 
@@ -65,5 +66,22 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           echo "Comparing with ${BASE}."
+
+          set +e
           "$(composer global config bin-dir --absolute)/roave-backward-compatibility-check" \
-            --from="${BASE}" --format=github-actions --format=markdown
+            --from="${BASE}" --format=github-actions --format=markdown > report.txt
+          status=$?
+          set -e
+
+          # Each break becomes a warning annotation, and the markdown list goes
+          # to the job summary, where the release notes can be copied from.
+          sed -n 's/^::error/::warning/p' report.txt
+          grep -v '^::' report.txt >> "$GITHUB_STEP_SUMMARY" || true
+
+          # The checker exits 3 when it finds breaks. Anything else non-zero is
+          # the checker failing, which stays red.
+          case "$status" in
+            0) echo "No public API breaks." ;;
+            3) echo "Public API breaks found. Name them in the release notes." ;;
+            *) cat report.txt; exit "$status" ;;
+          esac

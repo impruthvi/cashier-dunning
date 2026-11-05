@@ -1,6 +1,5 @@
 <?php
 
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
@@ -60,8 +59,6 @@ it('records the dunning scenario against Stripe', function () {
     registerDunningPolicy();
 
     expect(recordAndWrite('trial-dunning-cancel-reactivate')->steps)->toHaveCount(7);
-
-    CashierDunning::flush();
 })->group('live');
 
 it('records the downgrade scenario against Stripe', function () {
@@ -69,6 +66,4 @@ it('records the downgrade scenario against Stripe', function () {
     registerPlanLimits();
 
     expect(recordAndWrite('downgrade-over-usage-limit')->steps)->toHaveCount(5);
-
-    CashierDunning::flush();
 })->group('live');

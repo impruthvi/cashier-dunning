@@ -53,8 +53,6 @@ beforeEach(function () {
     });
 });
 
-afterEach(fn () => CashierDunning::flush());
-
 function replayEarlyCancellation(): ReplayReport
 {
     return app(ReplayRunner::class)->run(

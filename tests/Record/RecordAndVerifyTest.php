@@ -2,7 +2,6 @@
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Event;
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
@@ -22,13 +21,10 @@ use Stripe\Exception\RateLimitException;
  */
 
 beforeEach(function () {
-    CashierDunning::flush();
     $this->root = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cd-record-'.uniqid();
 });
 
 afterEach(function () {
-    CashierDunning::flush();
-
     foreach (['stripe', 'quarantine'] as $directory) {
         array_map(unlink(...), glob($this->root.DIRECTORY_SEPARATOR.$directory.DIRECTORY_SEPARATOR.'*.json') ?: []);
         @rmdir($this->root.DIRECTORY_SEPARATOR.$directory);

@@ -1,7 +1,6 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosReport;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
@@ -11,7 +10,6 @@ use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
-    CashierDunning::flush();
     DunningMailer::reset();
 });
 

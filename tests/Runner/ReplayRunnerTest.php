@@ -7,8 +7,6 @@ use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
-afterEach(fn () => CashierDunning::flush());
-
 function runner(): ReplayRunner
 {
     return app(ReplayRunner::class);

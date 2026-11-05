@@ -3,7 +3,6 @@
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -23,7 +22,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    CashierDunning::flush();
     DunningMailer::reset();
 });
 

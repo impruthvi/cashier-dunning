@@ -3,7 +3,6 @@
 use Illuminate\Contracts\Bus\Dispatcher as BusDispatcher;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Support\Facades\Event;
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Chaos\ChaosRunner;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -18,7 +17,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    CashierDunning::flush();
     AfterCommitJob::$handled = 0;
 });
 

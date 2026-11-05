@@ -2,8 +2,6 @@
 
 use Impruthvi\CashierDunning\CashierDunning;
 
-afterEach(fn () => CashierDunning::flush());
-
 it('passes with no Stripe key at all', function () {
     // Replay is the default mode of use. An installation that has never seen a
     // Stripe key is a healthy installation.

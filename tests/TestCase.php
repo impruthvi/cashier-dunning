@@ -5,6 +5,7 @@ namespace Impruthvi\CashierDunning\Tests;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\CashierDunningServiceProvider;
 use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 use Impruthvi\CashierDunning\Tests\Support\TrackDunning;
@@ -45,6 +46,19 @@ class TestCase extends Orchestra
         // An application that emails on failed payments, used to show what a
         // chaos run can see that an ordered run cannot.
         Event::listen(WebhookReceived::class, [DunningMailer::class, 'handle']);
+    }
+
+    /**
+     * CashierDunning keeps the billable factory and the entitlement resolver in
+     * static properties, which outlive the application Testbench rebuilds for
+     * each test. Cleared here so a test that registers one cannot leak it into
+     * whichever test the random order runs next.
+     */
+    protected function tearDown(): void
+    {
+        CashierDunning::flush();
+
+        parent::tearDown();
     }
 
     protected function defineDatabaseMigrations(): void

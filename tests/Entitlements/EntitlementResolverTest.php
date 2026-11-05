@@ -5,8 +5,6 @@ use Impruthvi\CashierDunning\Contracts\EntitlementResolver;
 use Impruthvi\CashierDunning\Entitlements\Exceptions\InvalidResolver;
 use Impruthvi\CashierDunning\Entitlements\NullResolver;
 
-afterEach(fn () => CashierDunning::flush());
-
 it('resolves to a null resolver when the application registered nothing', function () {
     // Running a scenario before wiring entitlements must work. Subscription
     // status and webhook ordering are worth watching on their own.

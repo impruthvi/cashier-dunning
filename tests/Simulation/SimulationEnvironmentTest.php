@@ -25,7 +25,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    CashierDunning::flush();
     Carbon::setTestNow();
     CarbonImmutable::setTestNow();
 });

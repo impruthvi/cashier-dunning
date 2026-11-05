@@ -23,8 +23,6 @@ beforeEach(function () {
     );
 });
 
-afterEach(fn () => CashierDunning::flush());
-
 it('produces a header Stripe own verifier accepts', function () {
     // Not a reimplementation checked against itself: this is Stripe's verifier,
     // the same code Cashier's middleware calls.
