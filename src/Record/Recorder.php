@@ -5,6 +5,7 @@ namespace Impruthvi\CashierDunning\Record;
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Allowlist;
 use Impruthvi\CashierDunning\Fixtures\ApiExchange;
+use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Normalizer;
 use Impruthvi\CashierDunning\Fixtures\Provider;
@@ -56,6 +57,7 @@ final class Recorder
 
     /**
      * @throws IncompleteRecording when the scenario's manifest is not satisfied
+     * @throws InvalidFixture when what was captured cannot be written as a fixture
      */
     public function record(Scenario $scenario, ?CarbonImmutable $startsAt = null): Fixture
     {
@@ -104,13 +106,25 @@ final class Recorder
             );
         }
 
-        return new Fixture(
-            provider: Provider::Stripe,
-            scenario: $scenario->name,
-            provenance: $this->provenance($startsAt),
-            manifest: $scenario->manifest,
-            steps: $steps,
-        );
+        try {
+            return new Fixture(
+                provider: Provider::Stripe,
+                scenario: $scenario->name,
+                provenance: $this->provenance($startsAt),
+                manifest: $scenario->manifest,
+                steps: $steps,
+            );
+        } catch (InvalidFixture $e) {
+            // Reachable when the allowlist keeps a string field whose recorded
+            // value happens to contain {{...}}. The clock is gone by now, so
+            // the capture is quarantined like a short recording: it is the only
+            // record of what Stripe sent.
+            throw InvalidFixture::unpublishableRecording(
+                $scenario->name,
+                $e,
+                $this->writeArtifact($scenario, $startsAt, $e->getMessage()),
+            );
+        }
     }
 
     /** @return list<array<string, mixed>> */
@@ -362,18 +376,7 @@ final class Recorder
         ?Throwable $previous = null,
         array $missing = [],
     ): IncompleteRecording {
-        $path = null;
-
-        if ($this->quarantineDirectory !== null) {
-            $path = (new QuarantineArtifact(
-                scenario: $scenario,
-                captured: $this->captured,
-                requestIds: $this->requestIds,
-                reason: $reason,
-                startedAt: $startsAt,
-                failedAt: CarbonImmutable::now('UTC'),
-            ))->write($this->quarantineDirectory);
-        }
+        $path = $this->writeArtifact($scenario, $startsAt, $reason);
 
         $types = array_map(
             static fn (array $event): string => (string) ($event['type'] ?? ''),
@@ -387,5 +390,21 @@ final class Recorder
             reason: $reason,
             artifactPath: $path,
         );
+    }
+
+    private function writeArtifact(Scenario $scenario, CarbonImmutable $startsAt, string $reason): ?string
+    {
+        if ($this->quarantineDirectory === null) {
+            return null;
+        }
+
+        return (new QuarantineArtifact(
+            scenario: $scenario,
+            captured: $this->captured,
+            requestIds: $this->requestIds,
+            reason: $reason,
+            startedAt: $startsAt,
+            failedAt: CarbonImmutable::now('UTC'),
+        ))->write($this->quarantineDirectory);
     }
 }

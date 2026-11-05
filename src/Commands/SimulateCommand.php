@@ -134,10 +134,15 @@ class SimulateCommand extends Command
 
         try {
             ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
-                new Recorder(Cashier::stripe(), $this->quarantineDirectory()),
+                // Resolved rather than built, so a test can shorten the
+                // recorder's timeouts without a Stripe account.
+                $this->laravel->make(Recorder::class, [
+                    'stripe' => Cashier::stripe(),
+                    'quarantineDirectory' => $this->quarantineDirectory(),
+                ]),
                 $this->runner(),
             ))->record($scenario);
-        } catch (IncompleteRecording $e) {
+        } catch (IncompleteRecording|InvalidFixture $e) {
             $this->components->error($e->getMessage());
 
             return self::FAILURE;

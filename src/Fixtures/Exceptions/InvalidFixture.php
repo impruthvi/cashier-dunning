@@ -73,4 +73,23 @@ class InvalidFixture extends RuntimeException
             'Expected a provider id such as {{sub_1}} or a point on the timeline such as {{t+14d}}.'
         );
     }
+
+    /**
+     * A fresh recording the fixture format refused.
+     *
+     * By the time the fixture is built the test clock has been deleted, so the
+     * quarantined capture is the only thing left to inspect. The message says
+     * where it went.
+     */
+    public static function unpublishableRecording(string $scenario, self $cause, ?string $artifactPath): self
+    {
+        $message = "Recording [{$scenario}] could not be turned into a fixture: {$cause->getMessage()}\n\n".
+            'No fixture was written.';
+
+        if ($artifactPath !== null) {
+            $message .= "\n\nDiagnostics written to {$artifactPath}";
+        }
+
+        return new self($message, previous: $cause);
+    }
 }
