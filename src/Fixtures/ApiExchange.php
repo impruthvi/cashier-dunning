@@ -18,7 +18,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
 final readonly class ApiExchange
 {
     /**
-     * @param  array<string, scalar|null>  $matchBody
+     * @param  array<string, mixed>  $matchBody  parameter name => value; nested values such as `items` and `expand` are arrays
      * @param  array<string, mixed>  $responseBody
      */
     public function __construct(

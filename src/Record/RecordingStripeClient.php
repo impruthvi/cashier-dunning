@@ -5,6 +5,7 @@ namespace Impruthvi\CashierDunning\Record;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 use Stripe\Util\CaseInsensitiveArray;
+use Stripe\Util\RequestOptions;
 
 /**
  * Collects response ids for one recording without changing the supplied
@@ -23,6 +24,10 @@ final class RecordingStripeClient extends StripeClient
         parent::__construct();
     }
 
+    /**
+     * @param  array<array-key, mixed>  $params
+     * @param  array<array-key, mixed>|RequestOptions  $opts
+     */
     public function request($method, $path, $params, $opts)
     {
         try {
