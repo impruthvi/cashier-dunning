@@ -2,6 +2,8 @@
 
 namespace Impruthvi\CashierDunning\Fixtures\Exceptions;
 
+use Impruthvi\CashierDunning\Fixtures\ApiExchange;
+use Impruthvi\CashierDunning\Fixtures\MatchPath;
 use RuntimeException;
 
 class InvalidFixture extends RuntimeException
@@ -76,6 +78,25 @@ class InvalidFixture extends RuntimeException
             $index,
             "[{$token}] is not a placeholder this version of cashier-dunning understands. ".
             'Expected a provider id such as {{sub_1}} or a point on the timeline such as {{t+14d}}.'
+        );
+    }
+
+    /**
+     * A match path that breaks {@see MatchPath}'s shape rule. Not a
+     * DisallowedField: a path is not a field, and the allowlist does not judge it.
+     */
+    public static function malformedMatchPath(int $index, ApiExchange $exchange, string $problem): self
+    {
+        return self::malformedStep($index, "the match path of [{$exchange->method} {$exchange->path}] {$problem}");
+    }
+
+    /** A missing path reads as `''`, which can never match a request. */
+    public static function missingMatchPath(int $index, ApiExchange $exchange): self
+    {
+        return self::malformedStep(
+            $index,
+            "the API exchange [{$exchange->method}] has no match path. ".
+            'Every exchange matches on one, such as /v1/subscriptions/{{sub_1}}.'
         );
     }
 }

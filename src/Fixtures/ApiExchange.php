@@ -31,7 +31,8 @@ final readonly class ApiExchange
 
     /**
      * A missing key takes the format's default: method GET, status 200, empty
-     * bodies. A key with the wrong type is refused.
+     * bodies. The path has no default: a missing one reads as `''`, which
+     * loading refuses ({@see MatchPath}). A key with the wrong type is refused.
      */
     public static function fromDecoded(DecodedObject $exchange): self
     {

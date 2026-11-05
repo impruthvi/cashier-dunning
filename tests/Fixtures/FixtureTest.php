@@ -211,6 +211,83 @@ it('loads a fixture whose API exchange has an empty match body, as the recorder 
     expect($fixture->steps[0]->apiExchanges[0]->matchBody)->toBe([]);
 });
 
+/** @param array<string, mixed> $match */
+function fixtureWithExchangePath(array $match): string
+{
+    return fixtureWithExchange([
+        'match' => $match,
+        'response' => ['status' => 200, 'body' => ['id' => '{{sub_1}}', 'object' => 'subscription']],
+    ]);
+}
+
+it('loads a fixture whose match path is lowercase words and whole provider-id placeholders', function (string $path) {
+    $fixture = FixtureFile::decode(fixtureWithExchangePath(['method' => 'POST', 'path' => $path]));
+
+    expect($fixture->steps[0]->apiExchanges[0]->path)->toBe($path);
+})->with([
+    '/v1/subscriptions/{{sub_1}}',
+    '/v1/subscription_items/{{si_1}}',
+    '/v1/subscription_schedules/{{sub_sched_1}}/release',
+    '/v1/invoices',
+]);
+
+it('refuses a fixture whose match path breaks the shape rule', function (array $match, string $message) {
+    // A match path is published with the fixture, and a hand author could put
+    // a real id or a customer's email in it. Refused on load, naming the step,
+    // the method and the path.
+    expect(fn () => FixtureFile::decode(fixtureWithExchangePath($match)))
+        ->toThrow(InvalidFixture::class, $message);
+})->with([
+    'missing path' => [
+        ['method' => 'GET'],
+        'Step 0 is invalid: the API exchange [GET] has no match path.',
+    ],
+    'empty path' => [
+        ['method' => 'GET', 'path' => ''],
+        'Step 0 is invalid: the API exchange [GET] has no match path.',
+    ],
+    'query string' => [
+        ['method' => 'GET', 'path' => '/v1/customers?email=someone@example.com'],
+        'Step 0 is invalid: the match path of [GET /v1/customers?email=someone@example.com] has a query string or fragment. Match on request parameters in the match body instead.',
+    ],
+    'fragment' => [
+        ['method' => 'GET', 'path' => '/v1/customers#top'],
+        'Step 0 is invalid: the match path of [GET /v1/customers#top] has a query string or fragment.',
+    ],
+    'email segment' => [
+        ['method' => 'GET', 'path' => '/v1/customers/someone@example.com'],
+        'Step 0 is invalid: the match path of [GET /v1/customers/someone@example.com] has the segment [someone@example.com], which is neither a lowercase word nor a whole provider-id placeholder.',
+    ],
+    'capitalised segment' => [
+        ['method' => 'GET', 'path' => '/v1/Customers'],
+        'Step 0 is invalid: the match path of [GET /v1/Customers] has the segment [Customers], which is neither a lowercase word nor a whole provider-id placeholder.',
+    ],
+    'lowercase literal provider id' => [
+        ['method' => 'GET', 'path' => '/v1/customers/cus_abc123'],
+        'Step 0 is invalid: the match path of [GET /v1/customers/cus_abc123] has the literal provider id [cus_abc123]. Use a placeholder such as {{cus_1}}.',
+    ],
+    'mixed-case literal provider id' => [
+        ['method' => 'GET', 'path' => '/v1/customers/cus_RealId'],
+        'Step 0 is invalid: the match path of [GET /v1/customers/cus_RealId] has the literal provider id [cus_RealId]. Use a placeholder such as {{cus_1}}.',
+    ],
+    'time placeholder' => [
+        ['method' => 'GET', 'path' => '/v1/x/{{t+14d}}'],
+        'Step 0 is invalid: the match path of [GET /v1/x/{{t+14d}}] has the segment [{{t+14d}}], which is neither a lowercase word nor a whole provider-id placeholder.',
+    ],
+    'embedded placeholder' => [
+        ['method' => 'GET', 'path' => '/v1/x/pre{{sub_1}}'],
+        'Step 0 is invalid: the match path of [GET /v1/x/pre{{sub_1}}] has the segment [pre{{sub_1}}], which is neither a lowercase word nor a whole provider-id placeholder.',
+    ],
+    'no leading slash' => [
+        ['method' => 'GET', 'path' => 'v1/customers'],
+        'Step 0 is invalid: the match path of [GET v1/customers] does not start with /.',
+    ],
+    'empty segment' => [
+        ['method' => 'GET', 'path' => '/v1//customers'],
+        'Step 0 is invalid: the match path of [GET /v1//customers] has an empty segment.',
+    ],
+]);
+
 it('reports required events that the recording never produced', function () {
     $fixture = Fixture::fromArray(minimalFixtureArray([
         'manifest' => [

@@ -29,6 +29,9 @@ final class Placeholder
     /** Anything that claims to be a token, recognised or not. */
     private const ANY = '/\{\{([^{}]*)\}\}/';
 
+    /** A string that is wholly one token. */
+    private const WHOLE = '/^\{\{([^{}]*)\}\}$/';
+
     private const ID = '/^([a-z_]+)_(\d+)$/';
 
     private const OFFSET = '/^t\+([0-9dhm]+)$/';
@@ -60,6 +63,20 @@ final class Placeholder
         $pattern = '/^('.implode('|', array_map(static fn (string $kind): string => preg_quote($kind, '/'), $kinds)).')_[A-Za-z0-9]+$/';
 
         return preg_match($pattern, $providerId, $matches) === 1 ? $matches[1] : null;
+    }
+
+    /**
+     * Whether a string is wholly one provider-id placeholder, such as
+     * `{{sub_1}}`: not a point on the timeline, and not a token embedded in a
+     * longer string.
+     */
+    public static function isWholeId(string $value): bool
+    {
+        if (preg_match(self::WHOLE, $value) !== 1) {
+            return false;
+        }
+
+        return self::parse($value)->kind !== null;
     }
 
     /**
@@ -99,7 +116,7 @@ final class Placeholder
      */
     public static function replace(string $value, Closure $resolve): string|int
     {
-        if (preg_match('/^'.trim(self::ANY, '/').'$/', $value) === 1) {
+        if (preg_match(self::WHOLE, $value) === 1) {
             return $resolve(self::parse($value));
         }
 
