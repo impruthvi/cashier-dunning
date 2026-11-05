@@ -58,8 +58,10 @@ final readonly class RecordAndVerify
         // offset harder to read than it needs to be.
         $startsAt ??= CarbonImmutable::now('UTC')->subDay()->startOfHour();
 
+        $requestIds = [];
+
         try {
-            ['fixture' => $recorded, 'captured' => $captured] = $this->recorder->record($scenario, $startsAt);
+            ['fixture' => $recorded, 'captured' => $captured, 'requestIds' => $requestIds] = $this->recorder->record($scenario, $startsAt);
 
             $report = $this->verified($recorded, $captured, $startsAt);
             $fixture = $recorded->withEntitlements(array_map(
@@ -77,6 +79,10 @@ final readonly class RecordAndVerify
                 throw RecordingRefused::saveFailed($fixture, $captured, $startsAt, $report, $cause);
             }
         } catch (RecordingRefused $refusal) {
+            if ($requestIds !== []) {
+                $refusal = $refusal->withRequestIds($requestIds);
+            }
+
             try {
                 $artifactPath = $this->quarantine($scenario, $refusal);
             } catch (Throwable $cause) {
@@ -117,8 +123,7 @@ final readonly class RecordAndVerify
         return (new QuarantineArtifact(
             scenario: $scenario,
             captured: $refusal->captured,
-            // Not collected yet: https://github.com/impruthvi/cashier-dunning/issues/50
-            requestIds: [],
+            requestIds: $refusal->requestIds,
             reason: $refusal->reason,
             startedAt: $refusal->startedAt,
             failedAt: CarbonImmutable::now('UTC'),

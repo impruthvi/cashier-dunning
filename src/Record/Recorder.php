@@ -55,15 +55,38 @@ final readonly class Recorder
      *
      * The raw capture comes back too, because the fixture is redacted,
      * normalised and holds only the events the scenario declared. A caller that
-     * has to quarantine a recording later needs what Stripe actually sent.
+     * has to quarantine a recording later needs what Stripe actually sent,
+     * along with the request ids from its Stripe responses.
      *
-     * @return array{fixture: Fixture, captured: list<array<string, mixed>>}
+     * @return array{fixture: Fixture, captured: list<array<string, mixed>>, requestIds: list<string>}
      *
      * @throws RecordingRefused when the recording is incomplete or cannot be
      *                          turned into a fixture. It carries what was
      *                          captured, so the caller can quarantine it.
      */
     public function record(Scenario $scenario, CarbonImmutable $startsAt): array
+    {
+        // Scope response collection to this call, including cleanup, while
+        // leaving the reusable recorder and its supplied client untouched.
+        $stripe = new RecordingStripeClient($this->stripe);
+        $recorder = new self($stripe, $this->eventTimeoutSeconds, $this->clockTimeoutSeconds);
+
+        try {
+            $recorded = $recorder->capture($scenario, $startsAt);
+        } catch (RateLimitException $e) {
+            // Clock creation can be refused before there is a clock to clean up.
+            throw RecordingRefused::rateLimited($scenario->name, [], $startsAt, $e)
+                ->withRequestIds($stripe->requestIds);
+        } catch (RecordingRefused $e) {
+            // Capture after cleanup, including the clock deletion response.
+            throw $e->withRequestIds($stripe->requestIds);
+        }
+
+        return [...$recorded, 'requestIds' => $stripe->requestIds];
+    }
+
+    /** @return array{fixture: Fixture, captured: list<array<string, mixed>>} */
+    private function capture(Scenario $scenario, CarbonImmutable $startsAt): array
     {
         $clock = TestClock::create($this->stripe, $startsAt, $this->clockTimeoutSeconds);
         $poller = new EventPoller($this->stripe, $startsAt->getTimestamp());

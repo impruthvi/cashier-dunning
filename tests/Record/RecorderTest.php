@@ -191,13 +191,14 @@ it('starts every recording with nothing captured', function () {
     // A recorder that kept its capture between calls would let the first
     // recording's events satisfy the second one's manifest, and write a short
     // recording as though it were complete.
-    [$stripe, $fake, $restore] = scriptedStripe(recordingScript([
-        subscriptionEvent('customer.subscription.created', 'trialing'),
-    ]));
+    $script = recordingScript([subscriptionEvent('customer.subscription.created', 'trialing')]);
+    $script['POST /v1/test_helpers/test_clocks']['__headers'] = ['Request-Id' => 'req_first'];
+    [$stripe, $fake, $restore] = scriptedStripe($script);
 
     $recorder = new Recorder($stripe, eventTimeoutSeconds: 0);
     $recorder->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
+    $fake->script['POST /v1/test_helpers/test_clocks']['__headers'] = ['Request-Id' => 'req_second'];
     $fake->script['GET /v1/events'] = ['object' => 'list', 'data' => []];
 
     try {
@@ -205,7 +206,8 @@ it('starts every recording with nothing captured', function () {
         $this->fail('Expected the second recording to be refused.');
     } catch (RecordingRefused $e) {
         expect($e->missing)->toBe(['customer.subscription.created'])
-            ->and($e->captured)->toBe([]);
+            ->and($e->captured)->toBe([])
+            ->and($e->requestIds)->toBe(['req_second']);
     } finally {
         $restore();
     }
