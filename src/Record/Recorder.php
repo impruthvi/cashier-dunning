@@ -60,7 +60,7 @@ final readonly class Recorder
      * @return array{fixture: Fixture, captured: list<array<string, mixed>>}
      *
      * @throws RecordingRefused when the recording is incomplete or cannot be
-     *                          written as a fixture. It carries what was
+     *                          turned into a fixture. It carries what was
      *                          captured, so the caller can quarantine it.
      */
     public function record(Scenario $scenario, CarbonImmutable $startsAt): array
@@ -119,7 +119,7 @@ final readonly class Recorder
             // value happens to contain {{...}}. The clock is gone by now, so
             // the capture is refused like a short recording: it is the only
             // record of what Stripe sent.
-            throw RecordingRefused::unpublishable($scenario->name, $state->captured, $startsAt, $e);
+            throw RecordingRefused::invalidFixture($scenario->name, $state->captured, $startsAt, $e);
         }
 
         return ['fixture' => $fixture, 'captured' => $state->captured];

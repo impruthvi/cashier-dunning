@@ -17,7 +17,7 @@ use Throwable;
  *
  * Four ways that happens. The recording is incomplete: a required event never
  * arrived, Stripe rate limited it, or the test clock stuck. It cannot be
- * written as a fixture. It does not replay clean through the application. Or
+ * turned into a fixture. It does not replay clean through the application. Or
  * it replays clean but the fixture cannot be saved to disk.
  *
  * Each one is refused the same way, because each one is worse as a fixture than
@@ -71,7 +71,7 @@ final class RecordingRefused extends RuntimeException
     }
 
     /** @param  list<array<string, mixed>>  $captured */
-    public static function unpublishable(string $scenario, array $captured, CarbonImmutable $startedAt, InvalidFixture $cause): self
+    public static function invalidFixture(string $scenario, array $captured, CarbonImmutable $startedAt, InvalidFixture $cause): self
     {
         return new self(
             scenario: $scenario,
@@ -106,13 +106,13 @@ final class RecordingRefused extends RuntimeException
     }
 
     /** @param list<array<string, mixed>> $captured */
-    public static function publicationFailed(Fixture $fixture, array $captured, CarbonImmutable $startedAt, ReplayReport $report, Throwable $cause): self
+    public static function saveFailed(Fixture $fixture, array $captured, CarbonImmutable $startedAt, ReplayReport $report, Throwable $cause): self
     {
         return new self(
             scenario: $fixture->scenario,
             reason: $cause->getMessage(),
-            refusal: 'could not be published',
-            consequence: 'Any previously published fixture was left untouched.',
+            refusal: 'could not be saved',
+            consequence: 'Any previous fixture was left untouched.',
             missing: [],
             captured: $captured,
             startedAt: $startedAt,
@@ -138,6 +138,17 @@ final class RecordingRefused extends RuntimeException
             previous: $this->getPrevious(),
             quarantineFailure: $cause,
         );
+    }
+
+    /**
+     * Log context for report(). The previous chain already holds the refusal's
+     * own cause, so a failed quarantine is handed to the log here instead.
+     *
+     * @return array{quarantine_failure?: Throwable}
+     */
+    public function context(): array
+    {
+        return $this->quarantineFailure === null ? [] : ['quarantine_failure' => $this->quarantineFailure];
     }
 
     /** The same refusal, now that what it captured has been quarantined at this path. */
@@ -235,7 +246,7 @@ final class RecordingRefused extends RuntimeException
 
         if ($this->quarantineFailure !== null) {
             $lines[] = '';
-            $lines[] = 'Quarantine could not be written: '.$this->quarantineFailure->getMessage();
+            $lines[] = 'Quarantine could not be saved: '.$this->quarantineFailure->getMessage();
             $lines[] = 'No diagnostic artifact was written.';
         }
 

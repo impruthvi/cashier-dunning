@@ -134,7 +134,7 @@ it('preserves distinct quarantines from the same second', function () {
         expect($second)->not->toBe($first)
             ->and(file_get_contents($first))->toBe($contents)
             ->and(file_get_contents($second))->toBe(shortRecording()->encode())
-            ->and(glob($directory.'/.publication-*'))->toBe([]);
+            ->and(glob($directory.'/.cashier-dunning-*'))->toBe([]);
     } finally {
         foreach ([$first, $second] as $path) {
             if ($path !== null) {

@@ -366,19 +366,19 @@ that means real charges to real cards, and there is no undo.
 
 A recording is replayed through your application before it is written, and only
 one that replays clean becomes a fixture. One that comes up short, cannot be
-written as a fixture, or does not replay clean is quarantined instead, under
+turned into a fixture, or does not replay clean is quarantined instead, under
 `quarantine/` in your fixture directory. The artifact holds what arrived and what
-did not. If replay or publication failed, it also holds the replay report and
+did not. If replay or saving failed, it also holds the replay report and
 the fixture that would have been written.
 
-Publication writes a complete temporary file beside the destination before
+Saving writes a complete temporary file beside the destination before
 replacing it. A failed attempt leaves any previous fixture untouched; concurrent
-successful publications are last-writer-wins. Quarantines use distinct filenames,
-even for attempts in the same second, and are also published as complete files.
-If quarantine cannot be written, the command exits unsuccessfully and reports
+successful saves are last-writer-wins. Quarantines use distinct filenames,
+even for attempts in the same second, and are also saved as complete files.
+If quarantine cannot be saved, the command exits unsuccessfully and reports
 both failures without claiming an artifact or writing to another location.
-Temporary-file cleanup is attempted on failure. This protects against partial
-publication, not power-loss durability.
+Temporary-file cleanup is attempted on failure. This protects against partially
+written files, not power-loss durability.
 
 ## Scenarios
 

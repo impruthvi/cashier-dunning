@@ -5,7 +5,7 @@ namespace Impruthvi\CashierDunning\Support;
 use RuntimeException;
 use Throwable;
 
-/** @internal Publishes complete local files; concurrent replacements are last-successful-write wins. */
+/** @internal Writes complete local files; concurrent replacements are last-successful-write wins. */
 final class AtomicFile
 {
     public static function write(string $path, string $contents): void
@@ -18,7 +18,7 @@ final class AtomicFile
 
         // Stay beside the destination: rename must not cross filesystems, and
         // tempnam can silently fall back to the system temporary directory.
-        $temporary = $directory.DIRECTORY_SEPARATOR.'.publication-'.bin2hex(random_bytes(16)).'.tmp';
+        $temporary = $directory.DIRECTORY_SEPARATOR.'.cashier-dunning-'.bin2hex(random_bytes(16)).'.tmp';
         $stream = @fopen($temporary, 'xb');
 
         if ($stream === false) {
@@ -37,10 +37,10 @@ final class AtomicFile
             }
 
             if (! @rename($temporary, $path)) {
-                throw new RuntimeException("Cannot publish file [{$path}].");
+                throw new RuntimeException("Cannot replace file [{$path}].");
             }
         } finally {
-            // Cleanup must not replace the publication failure on its way out.
+            // Cleanup must not replace the write failure on its way out.
             try {
                 if (is_resource($stream)) {
                     @fclose($stream);

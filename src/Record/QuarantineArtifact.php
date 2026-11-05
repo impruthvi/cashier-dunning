@@ -24,7 +24,7 @@ use Impruthvi\CashierDunning\Support\AtomicFile;
  * will ask for, but the recorder does not collect them yet: see
  * https://github.com/impruthvi/cashier-dunning/issues/50.
  *
- * A recording that did not replay clean, or could not be published, keeps the replay
+ * A recording that did not replay clean, or could not be saved, keeps the replay
  * and the fixture it would have written, because there the diagnosis lives in
  * the replay. The fixture is nested, so the artifact still has no top-level
  * `format_version` and still cannot be loaded.
