@@ -98,7 +98,7 @@ final class FixtureFile
 
         $reindented = preg_replace_callback(
             '/^(?: {4})+/m',
-            static fn (array $m): string => str_repeat(' ', strlen($m[0]) / 2),
+            static fn (array $m): string => str_repeat(' ', intdiv(strlen($m[0]), 2)),
             (string) $json
         );
 

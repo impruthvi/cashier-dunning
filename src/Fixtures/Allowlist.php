@@ -214,6 +214,7 @@ final class Allowlist
 
     /**
      * @param  array<string, mixed>  $event
+     * @param  list<string>|null  $permitted
      * @return list<string>
      */
     public function disallowedPaths(array $event, ?array $permitted = null): array

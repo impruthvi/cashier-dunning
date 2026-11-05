@@ -215,7 +215,9 @@ final class SimulationEnvironment
         $connections = [];
 
         foreach ([$this->billableConnection(), $this->databaseManager->connection()] as $connection) {
-            $connections[$connection->getName()] ??= $connection;
+            // A connection built outside the DatabaseManager can have no name.
+            // Key it by identity so it is still isolated, never merged with another.
+            $connections[$connection->getName() ?? spl_object_hash($connection)] ??= $connection;
         }
 
         return $connections;

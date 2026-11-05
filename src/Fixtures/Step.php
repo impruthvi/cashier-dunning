@@ -16,7 +16,7 @@ final readonly class Step
     /**
      * @param  list<array<string, mixed>>  $events
      * @param  list<ApiExchange>  $apiExchanges
-     * @param  array<string, bool|int|null>  $entitlements
+     * @param  array<string, scalar|null>  $entitlements
      */
     public function __construct(
         public Duration $advanceTo,
