@@ -33,13 +33,13 @@ Something the application tried to do to the outside world during a replay, such
 _Avoid_: Outbound, delivery
 
 **Allowlist**:
-The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is loaded.
-_Avoid_: Redaction list, denylist
+The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is loaded. Fixtures are committed to a public repository, which is why the allowlist exists.
+_Avoid_: Redaction list, denylist, publish (for saving a file)
 
 **Manifest**:
 The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when loaded.
 _Avoid_: Expected events, checklist
 
 **Quarantine**:
-The diagnostics retained from a refused recording: metadata about the events Stripe sent before it was refused, and why it was refused. A recording is refused when it is incomplete, cannot be written as a fixture, or does not replay clean. A quarantine is kept where it can never be loaded as a fixture. If it cannot be saved, the refusal reports that failure instead of claiming a quarantine exists.
+The diagnostics retained from a refused recording: metadata about the events Stripe sent before it was refused, and why it was refused. A recording is refused when it is incomplete, cannot be turned into a fixture, does not replay clean, or replays clean but cannot be saved. A quarantine is kept where it can never be loaded as a fixture. If it cannot be saved, the refusal reports that failure instead of claiming a quarantine exists.
 _Avoid_: Failed fixture, draft, partial recording

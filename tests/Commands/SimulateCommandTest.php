@@ -134,7 +134,7 @@ it('shows the replay a fresh recording failed, and writes no fixture', function 
     }
 });
 
-it('reports publication and quarantine failures and exits unsuccessfully', function () {
+it('reports save and quarantine failures and exits unsuccessfully', function () {
     billableUser();
     [$root, $cleanup] = scriptedRecording([
         subscriptionEvent('customer.subscription.created', 'trialing'),
@@ -148,7 +148,7 @@ it('reports publication and quarantine failures and exits unsuccessfully', funct
         $exit = Artisan::call('billing:simulate downgrade-over-usage-limit --record');
 
         expect($exit)->toBe(1)
-            ->and(Artisan::output())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
+            ->and(Artisan::output())->toContain('could not be saved', 'Quarantine could not be saved', 'No diagnostic artifact was written')
             ->and(Artisan::output())->not->toContain('Diagnostics written to', 'Wrote '.$root);
     } finally {
         unlink($root.'/stripe');

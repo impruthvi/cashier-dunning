@@ -220,7 +220,7 @@ it('quarantines a recording the simulation environment refused to replay', funct
     noFixtureIn($this->root);
 });
 
-it('quarantines a verified fixture when its publication directory is blocked', function () {
+it('quarantines a verified fixture when its fixture directory is blocked', function () {
     billableUser();
     registerDunningPolicy();
     mkdir($this->root);
@@ -231,7 +231,7 @@ it('quarantines a verified fixture when its publication directory is blocked', f
         $e = refusedRecording($this->root, recordingScript([$created]));
         $artifact = onlyQuarantineIn($this->root);
 
-        expect($e->getMessage())->toContain('could not be published', 'Cannot create directory')
+        expect($e->getMessage())->toContain('could not be saved', 'Cannot create directory')
             ->and($e->getPrevious())->toBeInstanceOf(RuntimeException::class)
             ->and($e->report?->passed())->toBeTrue()
             ->and($artifact['reason'])->toBe($e->getPrevious()->getMessage())
@@ -274,7 +274,7 @@ it('leaves an existing fixture untouched when replacement cannot be written', fu
         expect($e->getMessage())->toContain('Cannot create temporary file')
             ->and(file_get_contents($path))->toBe($original)
             ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue()
-            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([]);
+            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([]);
     } finally {
         chmod($this->root.'/stripe', 0755);
     }
@@ -290,16 +290,16 @@ it('cleans up the temporary file when the final rename fails', function () {
             subscriptionEvent('customer.subscription.created', 'trialing'),
         ]));
 
-        expect($e->getMessage())->toContain('Cannot publish file ['.$destination.']')
+        expect($e->getMessage())->toContain('Cannot replace file ['.$destination.']')
             ->and(is_dir($destination))->toBeTrue()
-            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([])
+            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([])
             ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue();
     } finally {
         rmdir($destination);
     }
 });
 
-it('retains both failures when neither publication nor quarantine can be written', function () {
+it('retains both failures when neither the fixture nor its quarantine can be saved', function () {
     billableUser();
     mkdir($this->root);
     file_put_contents($this->root.'/stripe', 'blocked fixture directory');
@@ -310,10 +310,13 @@ it('retains both failures when neither publication nor quarantine can be written
             subscriptionEvent('customer.subscription.created', 'trialing'),
         ]));
 
-        expect($e->getMessage())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
+        expect($e->getMessage())->toContain('could not be saved', 'Quarantine could not be saved', 'No diagnostic artifact was written')
             ->and($e->getMessage())->not->toContain('Diagnostics written to')
             ->and($e->getPrevious()?->getMessage())->toContain(nativePath($this->root, 'stripe'))
             ->and($e->quarantineFailure?->getMessage())->toContain(nativePath($this->root, 'quarantine'))
+            // previous holds the first failure, so report() reaches the
+            // second one, and its trace, only through the log context.
+            ->and($e->context())->toBe(['quarantine_failure' => $e->quarantineFailure])
             ->and($e->artifactPath)->toBeNull()
             ->and($e->captured)->toHaveCount(1)
             ->and($e->report?->passed())->toBeTrue()
@@ -322,6 +325,13 @@ it('retains both failures when neither publication nor quarantine can be written
         unlink($this->root.'/stripe');
         unlink($this->root.'/quarantine');
     }
+});
+
+it('adds nothing to the log context once the refusal is quarantined', function () {
+    $e = refusedRecording($this->root, recordingScript([]));
+
+    expect($e->artifactPath)->not->toBeNull()
+        ->and($e->context())->toBe([]);
 });
 
 it('keeps the original recording refusal when quarantine fails', function () {
@@ -333,7 +343,7 @@ it('keeps the original recording refusal when quarantine fails', function () {
             subscriptionEvent('customer.subscription.created', '{{bad}}'),
         ]));
 
-        expect($e->getMessage())->toContain('[{{bad}}] is not a placeholder', 'Quarantine could not be written')
+        expect($e->getMessage())->toContain('[{{bad}}] is not a placeholder', 'Quarantine could not be saved')
             ->and($e->getPrevious())->toBeInstanceOf(InvalidFixture::class)
             ->and($e->quarantineFailure)->toBeInstanceOf(RuntimeException::class)
             ->and($e->artifactPath)->toBeNull();
@@ -342,7 +352,7 @@ it('keeps the original recording refusal when quarantine fails', function () {
     }
 });
 
-it('replaces the published fixture without modifying the previous file in place', function () {
+it('replaces a fixture without modifying the previous file in place', function () {
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
     $path = nativePath($this->root, 'stripe', 'test-scenario.json');
@@ -363,7 +373,7 @@ it('replaces the published fixture without modifying the previous file in place'
             ->and(file_get_contents($path))->toBe(FixtureFile::encode($result['fixture']))
             ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario')
             ->and(file_get_contents($previous))->toBe($original)
-            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([]);
+            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([]);
     } finally {
         $restore();
         unlink($previous);

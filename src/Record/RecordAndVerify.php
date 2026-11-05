@@ -16,10 +16,10 @@ use Throwable;
 /**
  * Records a scenario, replays it, and only then writes it.
  *
- * A fresh recording is published only after a clean replay. Refusals attempt
- * quarantine; if persistence fails too, the refusal keeps both causes and
- * claims no artifact. No caller decides between publication and quarantine.
- * Publication replaces a previous fixture only once the new file is complete.
+ * A fresh recording is saved only after a clean replay. Refusals attempt
+ * quarantine; if saving that fails too, the refusal keeps both causes and
+ * claims no artifact. No caller decides between saving and quarantine. Saving
+ * replaces a previous fixture only once the new file is complete.
  *
  * The replay does two jobs at once. A recording captures what Stripe did, but a
  * fixture's entitlement column is what the *application* made of it, and that
@@ -74,7 +74,7 @@ final readonly class RecordAndVerify
             try {
                 FixtureFile::write($fixture, $path);
             } catch (Throwable $cause) {
-                throw RecordingRefused::publicationFailed($fixture, $captured, $startsAt, $report, $cause);
+                throw RecordingRefused::saveFailed($fixture, $captured, $startsAt, $report, $cause);
             }
         } catch (RecordingRefused $refusal) {
             try {
@@ -90,7 +90,7 @@ final readonly class RecordAndVerify
     }
 
     /**
-     * The successful replay, including the entitlements to publish at each step.
+     * The successful replay, including the entitlements to save at each step.
      *
      * @param  list<array<string, mixed>>  $captured  what Stripe sent, kept for the quarantine
      *
