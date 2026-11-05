@@ -364,9 +364,12 @@ cannot silently become permitted. Recording creates customers, subscriptions and
 invoices and advances a clock through months of billing — against a live key
 that means real charges to real cards, and there is no undo.
 
-A recording that comes up short never becomes a fixture. It becomes a
-quarantined artifact holding what arrived, what did not, and the request ids
-Stripe support will ask for.
+A recording is replayed through your application before it is written, and only
+one that replays clean becomes a fixture. One that comes up short, cannot be
+written as a fixture, or does not replay clean is quarantined instead, under
+`quarantine/` in your fixture directory. The artifact holds what arrived and what
+did not. If the replay failed, it also holds the replay and the fixture that
+would have been written.
 
 ## Scenarios
 

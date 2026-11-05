@@ -1,6 +1,9 @@
 <?php
 
+use Illuminate\Support\Facades\Event;
+use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Record\Recorder;
+use Laravel\Cashier\Events\WebhookReceived;
 
 it('refuses to record against a live key before touching Stripe', function () {
     // The guard sits in the command, not in the recorder, so no later code path
@@ -30,23 +33,67 @@ it('does not check the key when replaying', function () {
         ->assertSuccessful();
 });
 
-it('reports a recording the fixture format refuses instead of crashing', function () {
-    // The recording reaches Stripe and back, then fails when the fixture is
-    // built. That has to read as a failed recording, not a stack trace.
+/**
+ * Points `--record` at a scripted Stripe and a fresh fixture root.
+ *
+ * @param  list<array<string, mixed>>  $events
+ * @return array{0: string, 1: Closure(): void} the fixture root, and the cleanup to run in `finally`
+ */
+function scriptedRecording(array $events): array
+{
     config()->set('cashier.secret', 'sk_test_scripted');
     $root = sys_get_temp_dir().'/cashier-dunning-fixtures-'.uniqid();
     config()->set('cashier-dunning.fixtures.path', $root);
 
+    // The command resolves the recorder, so its timeouts can be shortened here.
     app()->bind(Recorder::class, fn ($app, array $parameters) => new Recorder(
         $parameters['stripe'],
-        $parameters['quarantineDirectory'],
         eventTimeoutSeconds: 0,
     ));
 
-    [, , $restore] = scriptedStripe(recordingScript([
+    [, , $restore] = scriptedStripe(recordingScript($events));
+
+    return [$root, function () use ($root, $restore): void {
+        $restore();
+        CashierDunning::flush();
+
+        foreach (['stripe', 'quarantine'] as $directory) {
+            array_map(unlink(...), glob($root.'/'.$directory.'/*.json') ?: []);
+            @rmdir($root.'/'.$directory);
+        }
+
+        @rmdir($root);
+    }];
+}
+
+it('writes a recording that replays clean, and says where', function () {
+    billableUser();
+
+    [$root, $cleanup] = scriptedRecording([
+        subscriptionEvent('customer.subscription.created', 'trialing'),
+        subscriptionEvent('customer.subscription.updated', 'active'),
+    ]);
+
+    try {
+        $this->artisan('billing:simulate downgrade-over-usage-limit --record')
+            ->expectsOutputToContain('Wrote '.$root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'downgrade-over-usage-limit.json')
+            ->expectsOutputToContain('replayed clean.')
+            ->assertSuccessful();
+
+        expect(file_exists($root.'/stripe/downgrade-over-usage-limit.json'))->toBeTrue()
+            ->and(glob($root.'/quarantine/*.json') ?: [])->toBe([]);
+    } finally {
+        $cleanup();
+    }
+});
+
+it('reports a recording the fixture format refuses instead of crashing', function () {
+    // The recording reaches Stripe and back, then fails when the fixture is
+    // built. That has to read as a failed recording, not a stack trace.
+    [$root, $cleanup] = scriptedRecording([
         subscriptionEvent('customer.subscription.created', '{{bad}}'),
         subscriptionEvent('customer.subscription.updated', 'active'),
-    ]));
+    ]);
 
     try {
         $this->artisan('billing:simulate downgrade-over-usage-limit --record')
@@ -57,9 +104,33 @@ it('reports a recording the fixture format refuses instead of crashing', functio
         expect(glob($root.'/quarantine/*.quarantine.json') ?: [])->toHaveCount(1)
             ->and(file_exists($root.'/stripe/downgrade-over-usage-limit.json'))->toBeFalse();
     } finally {
-        $restore();
-        array_map(unlink(...), glob($root.'/quarantine/*.json') ?: []);
-        @rmdir($root.'/quarantine');
-        @rmdir($root);
+        $cleanup();
+    }
+});
+
+it('shows the replay a fresh recording failed, and writes no fixture', function () {
+    // The refusal names the verdict. The timeline under it is what says which
+    // event the application fell over on.
+    billableUser();
+    Event::listen(WebhookReceived::class, function (): void {
+        throw new RuntimeException('the application fell over');
+    });
+
+    [$root, $cleanup] = scriptedRecording([
+        subscriptionEvent('customer.subscription.created', 'trialing'),
+        subscriptionEvent('customer.subscription.updated', 'active'),
+    ]);
+
+    try {
+        $this->artisan('billing:simulate downgrade-over-usage-limit --record')
+            ->expectsOutputToContain('did not replay clean')
+            ->expectsOutputToContain('The application answered 500')
+            ->doesntExpectOutputToContain('Stack trace')
+            ->assertFailed();
+
+        expect(glob($root.'/quarantine/*.quarantine.json') ?: [])->toHaveCount(1)
+            ->and(file_exists($root.'/stripe/downgrade-over-usage-limit.json'))->toBeFalse();
+    } finally {
+        $cleanup();
     }
 });

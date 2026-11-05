@@ -1,6 +1,10 @@
 <?php
 
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Fixtures\Manifest;
+use Impruthvi\CashierDunning\Scenarios\Action;
+use Impruthvi\CashierDunning\Scenarios\Scenario;
+use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
 use Impruthvi\CashierDunning\Tests\Support\User;
 use Impruthvi\CashierDunning\Tests\TestCase;
 use Stripe\ApiRequestor;
@@ -143,6 +147,11 @@ function scriptedStripe(array $script): array
                     continue;
                 }
 
+                // A scripted failure: ['__status' => 429, '__body' => [...]].
+                if (isset($responses['__status'])) {
+                    return [json_encode($responses['__body'] ?? []), $responses['__status'], []];
+                }
+
                 return [json_encode($responses), 200, []];
             }
 
@@ -199,4 +208,18 @@ function recordingScript(array $events): array
         ],
         'GET /v1/events' => ['object' => 'list', 'data' => array_reverse($events)],
     ];
+}
+
+/** A subscribe-then-fail scenario, small enough to script by hand. */
+function twoStepScenario(array $required): Scenario
+{
+    return new Scenario(
+        name: 'test-scenario',
+        description: 'two steps',
+        steps: [
+            ScenarioStep::at('0d', 'subscribe', Action::subscribe('price_monthly', 'pm_card_chargeCustomerFail', 14)),
+            ScenarioStep::at('14d1h', 'payment fails'),
+        ],
+        manifest: new Manifest(required: $required),
+    );
 }
