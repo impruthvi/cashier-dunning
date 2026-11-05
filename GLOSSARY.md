@@ -16,6 +16,10 @@ _Avoid_: Stub, mock, cassette
 The request parameters an API exchange is matched on. A subset match by top-level parameter name; a nested value, such as `items` or `expand`, compares as JSON. The allowlist judges its keys, never its values, and the recorder writes it empty, so only a hand author fills it.
 _Avoid_: Request body, match params
 
+**Match path**:
+The URL path an API exchange is matched on, such as `/v1/subscriptions/{{sub_1}}`. Every exchange has one. Each segment is either a lowercase literal word or a whole provider-id placeholder, never a literal provider id, and the path has no query string; request parameters belong in the match body. A fixture whose match path breaks this is refused when loaded.
+_Avoid_: URL, endpoint, route
+
 **Placeholder**:
 A token in a fixture that stands for a provider id, such as `{{sub_1}}`, or a point on the timeline, such as `{{t+14d}}`. Minted once when the fixture is recorded, and resolved to concrete values afresh for each replay.
 _Avoid_: Template variable, normalised id
