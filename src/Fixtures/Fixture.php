@@ -77,7 +77,7 @@ final readonly class Fixture
         }
 
         return new self(
-            provider: Provider::fromFixture($data['provider']),
+            provider: Provider::fromFixture($fixture->string('provider')),
             scenario: $scenario,
             provenance: $fixture->object('provenance'),
             manifest: Manifest::fromDecoded($fixture->nested('manifest')),

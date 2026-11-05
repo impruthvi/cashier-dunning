@@ -17,12 +17,8 @@ enum Provider: string
 {
     case Stripe = 'stripe';
 
-    public static function fromFixture(mixed $value): self
+    public static function fromFixture(string $value): self
     {
-        if (! is_string($value)) {
-            throw InvalidFixture::missingKey('provider');
-        }
-
         return self::tryFrom($value)
             ?? throw InvalidFixture::unknownProvider($value);
     }

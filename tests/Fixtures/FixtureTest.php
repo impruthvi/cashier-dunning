@@ -302,6 +302,10 @@ it('refuses an API exchange field with the wrong type rather than coercing it', 
         ['match' => 'GET /v1/subscriptions'],
         'Step 0 is invalid: [api_responses[0].match] must be an object',
     ],
+    'response that is a number' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => 200],
+        'Step 0 is invalid: [api_responses[0].response] must be an object',
+    ],
     'status that is null' => [
         ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => ['status' => null]],
         'Step 0 is invalid: [api_responses[0].response.status] must be an integer',
@@ -373,6 +377,7 @@ it('refuses a top-level fixture field with the wrong type rather than coercing i
     'steps that is an object' => [['steps' => ['first' => ['advance_to' => '0d']]], 'Fixture is invalid: [steps] must be a list'],
     'step that is a string' => [['steps' => ['0d']], 'Fixture is invalid: [steps[0]] must be an object'],
     'provenance that is a list' => [['provenance' => ['synthetic']], 'Fixture is invalid: [provenance] must be an object'],
+    'provider that is a number' => [['provider' => 5], 'Fixture is invalid: [provider] must be a string'],
 ]);
 
 it('refuses a fixture that decodes to a list rather than an object', function () {
@@ -388,4 +393,8 @@ it('defaults the provenance and manifest of a fixture that has neither', functio
     expect($fixture->provenance)->toBe([])
         ->and($fixture->manifest->required)->toBe([])
         ->and($fixture->manifest->optional)->toBe([]);
+});
+
+it('defaults the entitlements of a step that has none', function () {
+    expect(FixtureFile::decode(json_encode(minimalFixtureArray()))->steps[0]->entitlements)->toBe([]);
 });
