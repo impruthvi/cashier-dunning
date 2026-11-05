@@ -75,7 +75,7 @@ it('writes a recording that replays clean, and says where', function () {
 
     try {
         $this->artisan('billing:simulate downgrade-over-usage-limit --record')
-            ->expectsOutputToContain('Wrote '.$root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'downgrade-over-usage-limit.json')
+            ->expectsOutputToContain('Wrote '.nativePath($root, 'stripe', 'downgrade-over-usage-limit.json'))
             ->expectsOutputToContain('replayed clean.')
             ->assertSuccessful();
 
