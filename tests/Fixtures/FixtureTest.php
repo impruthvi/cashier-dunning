@@ -1,5 +1,6 @@
 <?php
 
+use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
@@ -160,6 +161,55 @@ it('refuses a recorded API response of a kind the allowlist has no rules for', f
         'billing_details' => ['email' => 'someone@example.com'],
     ]));
 })->throws(InvalidFixture::class, 'billing_details');
+
+/** @param array<string, mixed> $matchBody */
+function fixtureWithExchangeMatch(array $matchBody): string
+{
+    return json_encode(minimalFixtureArray([
+        'steps' => [[
+            'advance_to' => '0d',
+            'label' => 'start',
+            'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
+            'api_responses' => [[
+                'match' => ['method' => 'POST', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => $matchBody],
+                'response' => ['status' => 200, 'body' => ['id' => '{{sub_1}}', 'object' => 'subscription']],
+            ]],
+        ]],
+    ]));
+}
+
+it('refuses to load a fixture whose API exchange matches on a request parameter the allowlist does not permit', function () {
+    // The match body is part of a published fixture. A hand author matching on
+    // a customer's email would publish it, so it is refused on load, and the
+    // message says which half of the exchange to fix.
+    FixtureFile::decode(fixtureWithExchangeMatch(['email' => 'someone@example.com']));
+})->throws(DisallowedField::class, 'Step 0 is invalid: the match body of [POST /v1/subscriptions/{{sub_1}}] contains request parameters not permitted by the allowlist: email');
+
+it('refuses to load a fixture whose API exchange matches on a nested parameter the allowlist does not permit', function () {
+    FixtureFile::decode(fixtureWithExchangeMatch(['metadata' => ['foo' => 'bar']]));
+})->throws(DisallowedField::class, 'the match body of [POST /v1/subscriptions/{{sub_1}}] contains request parameters not permitted by the allowlist: metadata');
+
+it('loads a fixture whose API exchange matches on permitted request parameters', function () {
+    $fixture = FixtureFile::decode(fixtureWithExchangeMatch([
+        'cancel_at_period_end' => true,
+        'quantity' => 2,
+        'items' => [['price' => '{{price_1}}']],
+        'expand' => ['latest_invoice'],
+    ]));
+
+    expect($fixture->steps[0]->apiExchanges[0]->matchBody)->toBe([
+        'cancel_at_period_end' => true,
+        'quantity' => 2,
+        'items' => [['price' => '{{price_1}}']],
+        'expand' => ['latest_invoice'],
+    ]);
+});
+
+it('loads a fixture whose API exchange has an empty match body, as the recorder writes it', function () {
+    $fixture = FixtureFile::decode(fixtureWithExchangeMatch([]));
+
+    expect($fixture->steps[0]->apiExchanges[0]->matchBody)->toBe([]);
+});
 
 it('reports required events that the recording never produced', function () {
     $fixture = Fixture::fromArray(minimalFixtureArray([

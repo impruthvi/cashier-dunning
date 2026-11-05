@@ -34,7 +34,8 @@ final class FixtureFile
      * Loading is where a fixture is refused, so every reader meets the same
      * rules: replay, doctor, and anything else that reads a file. A fixture is
      * refused when an event or a recorded API response carries a field the
-     * allowlist does not permit, or when a required event in its manifest
+     * allowlist does not permit, when an API exchange matches on a request
+     * parameter it does not permit, or when a required event in its manifest
      * never arrived.
      *
      * @throws InvalidFixture
@@ -68,6 +69,12 @@ final class FixtureFile
             }
 
             foreach ($step->apiExchanges as $exchange) {
+                $offending = $allowlist->disallowedRequestParameters($exchange->matchBody);
+
+                if ($offending !== []) {
+                    throw DisallowedField::inApiMatch($index, $exchange, $offending);
+                }
+
                 $offending = $allowlist->disallowedPathsInObject($exchange->responseBody);
 
                 if ($offending !== []) {

@@ -26,6 +26,20 @@ class DisallowedField extends InvalidFixture
         return self::notPermitted($step, "the recorded response to [{$exchange->method} {$exchange->path}]", $paths);
     }
 
+    /**
+     * A hand author needs to know which half of the exchange to fix, so this
+     * names the match body rather than the response.
+     *
+     * @param  list<string>  $parameters
+     */
+    public static function inApiMatch(int $step, ApiExchange $exchange, array $parameters): self
+    {
+        return new self(
+            "Step {$step} is invalid: the match body of [{$exchange->method} {$exchange->path}] contains request parameters not permitted by the allowlist: ".implode(', ', $parameters).'. '.
+            'Match on a permitted parameter instead, or add the parameter to the allowlist if it is safe to publish.'
+        );
+    }
+
     /** @param  list<string>  $paths */
     private static function notPermitted(int $step, string $where, array $paths): self
     {

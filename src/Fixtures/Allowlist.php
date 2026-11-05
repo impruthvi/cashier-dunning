@@ -21,6 +21,11 @@ namespace Impruthvi\CashierDunning\Fixtures;
  *   disallowedPaths(), disallowedPathsInObject() - used on load. Unlisted
  *                               fields refuse the fixture, because their
  *                               presence means it did not come from apply().
+ *   disallowedRequestParameters() - used on load, for the request parameters
+ *                               an API exchange matches on. The recorder
+ *                               always writes an empty match body, so there is
+ *                               no drop-on-record mode; a hand-authored match
+ *                               body is judged here.
  */
 final class Allowlist
 {
@@ -65,6 +70,32 @@ final class Allowlist
         'subscription' => self::SUBSCRIPTION,
         'invoice' => self::INVOICE,
         'subscription_item' => self::SUBSCRIPTION_ITEM,
+    ];
+
+    /**
+     * Request parameters an API exchange may match on, for every endpoint. What
+     * makes a parameter unsafe is its name, not the endpoint it is sent to, so
+     * one flat list. Only keys are judged, never values. Parameters carrying
+     * customer data (email, name, address, phone, description, metadata,
+     * shipping, tax_id_data, ...) are never listed.
+     *
+     * @var list<string>
+     */
+    private const REQUEST_PARAMETERS = [
+        'customer',
+        'subscription',
+        'price',
+        'quantity',
+        'items.*.id',
+        'items.*.price',
+        'items.*.quantity',
+        'items.*.deleted',
+        'cancel_at_period_end',
+        'proration_behavior',
+        'payment_behavior',
+        'trial_end',
+        'billing_cycle_anchor',
+        'expand.*',
     ];
 
     /** @var list<string> */
@@ -167,6 +198,18 @@ final class Allowlist
         $paths = $this->collect(['data' => ['object' => $object]], $this->permittedForObject($object));
 
         return array_map(static fn (string $path): string => substr($path, strlen('data.object.')), $paths);
+    }
+
+    /**
+     * Request parameters in an API exchange's match body that the allowlist
+     * does not permit.
+     *
+     * @param  array<array-key, mixed>  $matchBody
+     * @return list<string> parameter paths, such as `metadata` or `items.0.name`
+     */
+    public function disallowedRequestParameters(array $matchBody): array
+    {
+        return $this->collect($matchBody, self::REQUEST_PARAMETERS);
     }
 
     /**
