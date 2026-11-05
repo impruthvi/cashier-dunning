@@ -81,15 +81,15 @@ class InvalidFixture extends RuntimeException
      * quarantined capture is the only thing left to inspect. The message says
      * where it went.
      */
-    public static function unpublishableRecording(string $scenario, self $refused, ?string $artifactPath): self
+    public static function unpublishableRecording(string $scenario, self $cause, ?string $artifactPath): self
     {
-        $message = "Recording [{$scenario}] could not be turned into a fixture: {$refused->getMessage()}\n\n".
+        $message = "Recording [{$scenario}] could not be turned into a fixture: {$cause->getMessage()}\n\n".
             'No fixture was written.';
 
         if ($artifactPath !== null) {
             $message .= "\n\nDiagnostics written to {$artifactPath}";
         }
 
-        return new self($message, previous: $refused);
+        return new self($message, previous: $cause);
     }
 }

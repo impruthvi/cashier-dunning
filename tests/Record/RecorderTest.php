@@ -219,10 +219,9 @@ it('quarantines a recording whose allowlisted text cannot be read back as a fixt
             ->and($artifacts)->toHaveCount(1)
             ->and($e->getMessage())->toContain($artifacts[0])
             ->and(json_decode((string) file_get_contents($artifacts[0]), true)['captured_events'])->toHaveCount(1);
-
-        array_map(unlink(...), $artifacts);
-        rmdir($directory);
     } finally {
         $restore();
+        array_map(unlink(...), glob($directory.DIRECTORY_SEPARATOR.'*.json') ?: []);
+        @rmdir($directory);
     }
 });
