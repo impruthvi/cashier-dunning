@@ -14,8 +14,9 @@ RecordingRefused and QuarantineArtifact docblocks for quarantine, refused, manif
 what an artifact holds.
 A claim about what a quarantine contains needs a test that writes one and finds it there.
 
-When a diff touches how a fixture is loaded or validated, every docblock that says a fixture
-is refused, rejected or verified needs a test that loads such a fixture and sees it refused
+When a diff touches how a fixture is loaded or validated, every statement of what loading
+refuses must still be true: grep README.md and GLOSSARY.md for refuses and allowlist, not just
+the changed hunk. Every docblock that says a fixture is refused, rejected or verified needs a test that loads such a fixture and sees it refused
 for that reason: the expected message names what was refused (the field, the event, the
 token), not text other refusals share, such as `Step 0`. A refusal claim with no test behind
 it, or only a test that any refusal would pass, is a finding.

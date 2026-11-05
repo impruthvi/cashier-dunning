@@ -12,6 +12,10 @@ _Avoid_: Recording (as a noun for the file), snapshot
 One call the application made to Stripe during a step and the response Stripe gave, as recorded in a fixture. A replay answers a call only from an exchange in the current step whose method, path and chosen request parameters match.
 _Avoid_: Stub, mock, cassette
 
+**Match body**:
+The request parameters an API exchange is matched on. A subset match by top-level parameter name; a nested value, such as `items` or `expand`, compares as JSON. The allowlist judges its keys, never its values, and the recorder writes it empty, so only a hand author fills it.
+_Avoid_: Request body, match params
+
 **Placeholder**:
 A token in a fixture that stands for a provider id, such as `{{sub_1}}`, or a point on the timeline, such as `{{t+14d}}`. Minted once when the fixture is recorded, and resolved to concrete values afresh for each replay.
 _Avoid_: Template variable, normalised id
