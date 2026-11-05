@@ -15,9 +15,10 @@ use Throwable;
 /**
  * Raised when a recording does not become a fixture.
  *
- * Three ways that happens. The recording is incomplete: a required event never
+ * Four ways that happens. The recording is incomplete: a required event never
  * arrived, Stripe rate limited it, or the test clock stuck. It cannot be
- * written as a fixture. Or it does not replay clean through the application.
+ * written as a fixture. It does not replay clean through the application. Or
+ * it replays clean but the fixture cannot be saved to disk.
  *
  * Each one is refused the same way, because each one is worse as a fixture than
  * no fixture at all. A short recording replays green while proving nothing, and

@@ -10,7 +10,7 @@ use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Support\AtomicFile;
 
 /**
- * What a failed recording leaves behind.
+ * What a failed recording leaves behind, when the quarantine itself can be written.
  *
  * Written outside the fixture directory, deliberately, and without the
  * `format_version` key the loader requires — a quarantined recording must be
