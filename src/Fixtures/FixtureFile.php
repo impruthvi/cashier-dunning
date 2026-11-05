@@ -36,7 +36,8 @@ final class FixtureFile
      * rules: replay, doctor, and anything else that reads a file. A fixture is
      * refused when an event or a recorded API response carries a field the
      * allowlist does not permit, when an API exchange matches on a request
-     * parameter it does not permit, when a required event in its manifest
+     * parameter it does not permit, when a match path is missing or breaks its
+     * shape rule ({@see MatchPath}), when a required event in its manifest
      * never arrived, or when a field has the wrong type: a status of `"200"`, a
      * match body that is a list, an event without a string `type` and `id`.
      * Those are refused rather than cast, because a cast replays something the
@@ -73,6 +74,16 @@ final class FixtureFile
             }
 
             foreach ($step->apiExchanges as $exchange) {
+                if ($exchange->path === '') {
+                    throw InvalidFixture::missingMatchPath($index, $exchange);
+                }
+
+                $problem = MatchPath::problemWith($exchange->path);
+
+                if ($problem !== null) {
+                    throw InvalidFixture::malformedMatchPath($index, $exchange, $problem);
+                }
+
                 $offending = $allowlist->disallowedRequestParameters($exchange->matchBody);
 
                 if ($offending !== []) {
