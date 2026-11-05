@@ -30,6 +30,7 @@ final class RecordingRefused extends RuntimeException
 {
     /**
      * @param  list<string>  $missing
+     * @param  list<string>  $requestIds
      * @param  list<array<string, mixed>>  $captured
      */
     private function __construct(
@@ -45,6 +46,7 @@ final class RecordingRefused extends RuntimeException
         public readonly ?string $artifactPath = null,
         ?Throwable $previous = null,
         public readonly ?Throwable $quarantineFailure = null,
+        public readonly array $requestIds = [],
     ) {
         parent::__construct($this->compose(), previous: $previous);
     }
@@ -122,6 +124,16 @@ final class RecordingRefused extends RuntimeException
         );
     }
 
+    /** @param list<string> $requestIds */
+    public function withRequestIds(array $requestIds): self
+    {
+        return $this->copy(
+            artifactPath: $this->artifactPath,
+            quarantineFailure: $this->quarantineFailure,
+            requestIds: $requestIds,
+        );
+    }
+
     /** Retain the original cause as well as the failure to save diagnostics. */
     public function quarantineFailed(Throwable $cause): self
     {
@@ -148,8 +160,10 @@ final class RecordingRefused extends RuntimeException
     /**
      * The same refusal with the quarantine's outcome: where it was written, or
      * why it could not be. The message is composed again, so it reports that outcome.
+     *
+     * @param  list<string>|null  $requestIds
      */
-    private function copy(?string $artifactPath = null, ?Throwable $quarantineFailure = null): self
+    private function copy(?string $artifactPath = null, ?Throwable $quarantineFailure = null, ?array $requestIds = null): self
     {
         return new self(
             scenario: $this->scenario,
@@ -164,6 +178,7 @@ final class RecordingRefused extends RuntimeException
             artifactPath: $artifactPath,
             previous: $this->getPrevious(),
             quarantineFailure: $quarantineFailure,
+            requestIds: $requestIds ?? $this->requestIds,
         );
     }
 

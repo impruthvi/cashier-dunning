@@ -14,6 +14,7 @@ use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Support\AtomicFile;
 use Laravel\Cashier\Events\WebhookReceived;
 use Stripe\Exception\RateLimitException;
+use Stripe\Util\CaseInsensitiveArray;
 
 /*
  * Recording, verifying and writing are one decision: a fixture reaches disk only
@@ -114,6 +115,31 @@ it('writes a recording that replays clean, with the entitlements the application
     expectSavedFixture($path, $fixture);
 });
 
+it('quarantines the request ids from the clock, actions and event polling', function (array $events) {
+    $script = recordingScript($events);
+    $script['POST /v1/test_helpers/test_clocks']['__headers'] = ['Request-Id' => 'req_clock_create'];
+    $script['POST /v1/customers']['__headers'] = ['request-id' => 'req_customer'];
+    $script['GET /v1/prices']['__headers'] = ['Request-Id' => 'req_catalog'];
+    $script['POST /v1/subscriptions']['__headers'] = ['Request-Id' => 'req_subscribe'];
+    $script['GET /v1/events']['__headers'] = ['Request-Id' => 'req_poll'];
+    $script['GET /v1/subscriptions/*']['__headers'] = ['Request-Id' => 'req_subscription_state'];
+    $script['POST /v1/test_helpers/test_clocks/*/advance']['__headers'] = ['Request-Id' => 'req_clock_advance'];
+    $script['GET /v1/test_helpers/test_clocks/*']['__headers'] = new CaseInsensitiveArray(['Request-Id' => 'req_clock_status']);
+    $script['DELETE /v1/test_helpers/test_clocks/*']['__headers'] = ['Request-Id' => 'req_clock_delete'];
+
+    refusedRecording($this->root, $script);
+
+    expect(onlyQuarantineIn($this->root)['request_ids'])->toBe([
+        'req_clock_create', 'req_customer', 'req_catalog', 'req_subscribe',
+        'req_poll', 'req_subscription_state', 'req_clock_advance',
+        'req_clock_status', 'req_poll', 'req_subscription_state', 'req_clock_delete',
+    ]);
+})->with([
+    'missing events' => [[]],
+    'invalid fixture' => [[subscriptionEvent('customer.subscription.created', '{{bad}}')]],
+    'replay refused' => [[subscriptionEvent('customer.subscription.created', 'trialing')]],
+]);
+
 it('quarantines a recording that ended before every required event arrived', function () {
     // A short recording replays green forever, and the drift job, comparing it
     // against another short recording, agrees.
@@ -134,11 +160,11 @@ it('quarantines a recording that ended before every required event arrived', fun
     noFixtureIn($this->root);
 });
 
-it('quarantines a rate-limited recording under its own reason', function () {
+it('quarantines a rate-limited recording under its own reason', function (string $endpoint) {
     // Stripe allows twenty invoices per subscription per day. Knowing that is
     // what tells you to wait rather than to debug.
     $script = recordingScript([]);
-    $script['POST /v1/subscriptions'] = ['__status' => 429, '__body' => ['error' => [
+    $script[$endpoint] = ['__status' => 429, '__headers' => ['Request-Id' => 'req_rate_limited'], '__body' => ['error' => [
         'type' => 'invalid_request_error', 'code' => 'rate_limit', 'message' => '20 invoices per day reached',
     ]]];
 
@@ -146,10 +172,12 @@ it('quarantines a rate-limited recording under its own reason', function () {
 
     expect($e->getMessage())->toContain('Stripe rate limited the recording: 20 invoices per day reached')
         ->and($e->getPrevious())->toBeInstanceOf(RateLimitException::class)
-        ->and(onlyQuarantineIn($this->root)['reason'])->toContain('Stripe rate limited the recording');
+        ->and(onlyQuarantineIn($this->root)['reason'])->toContain('Stripe rate limited the recording')
+        ->and(onlyQuarantineIn($this->root)['request_ids'])->toContain('req_rate_limited')
+        ->and($e->requestIds)->toContain('req_rate_limited');
 
     noFixtureIn($this->root);
-});
+})->with(['POST /v1/subscriptions', 'POST /v1/test_helpers/test_clocks']);
 
 it('quarantines a recording whose test clock never finished advancing', function () {
     $script = recordingScript([subscriptionEvent('customer.subscription.created', 'trialing')]);
@@ -240,8 +268,13 @@ it('quarantines a verified fixture when its fixture directory is blocked', funct
     $created = subscriptionEvent('customer.subscription.created', 'trialing');
 
     try {
-        $e = refusedRecording($this->root, recordingScript([$created]));
+        $script = recordingScript([$created]);
+        $script['POST /v1/subscriptions']['__headers'] = ['Request-Id' => 'req_before_save'];
+        $e = refusedRecording($this->root, $script);
         $artifact = onlyQuarantineIn($this->root);
+
+        expect($artifact['request_ids'])->toBe(['req_before_save'])
+            ->and($e->requestIds)->toBe(['req_before_save']);
 
         expect($e->getMessage())->toContain('could not be saved', 'Cannot create directory')
             ->and($e->getPrevious())->toBeInstanceOf(RuntimeException::class)
@@ -347,9 +380,11 @@ it('keeps the original recording refusal when quarantine fails', function () {
     $unblock = blockDirectories($this->root.'/quarantine');
 
     try {
-        $e = refusedRecording($this->root, recordingScript([
-            subscriptionEvent('customer.subscription.created', '{{bad}}'),
-        ]));
+        $script = recordingScript([subscriptionEvent('customer.subscription.created', '{{bad}}')]);
+        $script['GET /v1/events']['__headers'] = ['Request-Id' => 'req_before_quarantine'];
+        $e = refusedRecording($this->root, $script);
+
+        expect($e->requestIds)->toBe(['req_before_quarantine', 'req_before_quarantine']);
 
         expect($e->getMessage())->toContain('[{{bad}}] is not a placeholder', 'Quarantine could not be saved')
             ->and($e->getPrevious())->toBeInstanceOf(InvalidFixture::class)

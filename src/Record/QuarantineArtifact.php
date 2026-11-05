@@ -20,9 +20,8 @@ use Impruthvi\CashierDunning\Support\AtomicFile;
  * slow, and only reproducible against a live Stripe account; telling someone
  * "that didn't work, try again" costs them twenty invoices of quota and tells
  * them nothing about why. The artifact holds what did arrive, what didn't, and
- * when each event landed. It has a place for the request ids Stripe support
- * will ask for, but the recorder does not collect them yet: see
- * https://github.com/impruthvi/cashier-dunning/issues/50.
+ * when each event landed, along with the response request ids Stripe support
+ * will ask for.
  *
  * A recording that did not replay clean, or could not be saved, keeps the replay
  * and the fixture it would have written, because there the diagnosis lives in

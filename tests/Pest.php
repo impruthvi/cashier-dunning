@@ -192,10 +192,13 @@ function scriptedStripe(array $script): array
 
                 // A scripted failure: ['__status' => 429, '__body' => [...]].
                 if (isset($responses['__status'])) {
-                    return [json_encode($responses['__body'] ?? []), $responses['__status'], []];
+                    return [json_encode($responses['__body'] ?? []), $responses['__status'], $responses['__headers'] ?? []];
                 }
 
-                return [json_encode($responses), 200, []];
+                $responseHeaders = $responses['__headers'] ?? [];
+                unset($responses['__headers']);
+
+                return [json_encode($responses), 200, $responseHeaders];
             }
 
             return [json_encode(['error' => ['type' => 'invalid_request_error', 'message' => "unscripted {$method} {$path}"]]), 400, []];
