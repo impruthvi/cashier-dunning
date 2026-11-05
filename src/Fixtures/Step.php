@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
 
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Support\WebhookEvent;
+use stdClass;
 
 /**
  * One point in a recorded billing timeline: advance the clock to here, deliver
@@ -27,16 +28,16 @@ final readonly class Step
         public array $entitlements = [],
     ) {}
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data, int $index): self
+    /** @param array<string, mixed>|stdClass $data */
+    public static function fromArray(array|stdClass $data, int $index): self
     {
+        $step = DecodedObject::of($data, static fn (string $reason): InvalidFixture => InvalidFixture::malformedStep($index, $reason));
+
         foreach (['advance_to', 'label', 'events'] as $key) {
-            if (! array_key_exists($key, $data)) {
+            if (! $step->has($key)) {
                 throw InvalidFixture::malformedStep($index, "missing key [{$key}]");
             }
         }
-
-        $step = DecodedObject::of($data, static fn (string $reason): InvalidFixture => InvalidFixture::malformedStep($index, $reason));
 
         return new self(
             advanceTo: Duration::parse($step->string('advance_to')),
@@ -58,7 +59,7 @@ final readonly class Step
         $event->string('type');
         $event->string('id');
 
-        return $event->data;
+        return $event->toArray();
     }
 
     /**

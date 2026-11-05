@@ -70,10 +70,10 @@ it('encodes empty maps as objects rather than arrays', function () {
             'label' => 'start',
             'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
             'api_responses' => [[
-                'match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => []],
+                'match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => new stdClass],
                 'response' => ['status' => 200, 'body' => ['id' => '{{sub_1}}']],
             ]],
-            'entitlements' => [],
+            'entitlements' => new stdClass,
         ]],
     ]))));
 
@@ -133,7 +133,7 @@ function fixtureWithExchangeResponse(array $responseBody): string
             'label' => 'start',
             'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
             'api_responses' => [[
-                'match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => []],
+                'match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => new stdClass],
                 'response' => ['status' => 200, 'body' => $responseBody],
             ]],
         ]],
@@ -171,7 +171,7 @@ function fixtureWithExchangeMatch(array $matchBody): string
             'label' => 'start',
             'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
             'api_responses' => [[
-                'match' => ['method' => 'POST', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => $matchBody],
+                'match' => ['method' => 'POST', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => $matchBody === [] ? new stdClass : $matchBody],
                 'response' => ['status' => 200, 'body' => ['id' => '{{sub_1}}', 'object' => 'subscription']],
             ]],
         ]],
@@ -460,6 +460,41 @@ it('refuses a top-level fixture field with the wrong type rather than coercing i
 it('refuses a fixture that decodes to a list rather than an object', function () {
     FixtureFile::decode('[{"format_version": 1}]');
 })->throws(InvalidFixture::class, 'Fixture must decode to an object.');
+
+function fixtureWithEmptyContainers(): string
+{
+    return <<<'JSON'
+{"format_version":1,"provider":"stripe","scenario":"containers","provenance":{},"manifest":{},"steps":[{"advance_to":"0d","label":"start","events":[],"entitlements":{},"api_responses":[{"match":{"path":"/v1/customers","body":{}},"response":{"body":{}}}]}]}
+JSON;
+}
+
+it('refuses JSON containers of the wrong kind before their identity is lost', function (string $valid, string $invalid, string $message) {
+    $json = str_replace($valid, $invalid, fixtureWithEmptyContainers());
+
+    expect(fn () => FixtureFile::decode($json))->toThrow(InvalidFixture::class, $message);
+})->with([
+    'empty list as match body' => ['"path":"/v1/customers","body":{}', '"path":"/v1/customers","body":[]', 'Step 0 is invalid: [api_responses[0].match.body] must be an object'],
+    'empty list as manifest' => ['"manifest":{}', '"manifest":[]', 'Fixture is invalid: [manifest] must be an object'],
+    'empty object as events' => ['"events":[]', '"events":{}', 'Step 0 is invalid: [events] must be a list'],
+    'numeric-keyed object as exchanges' => ['"api_responses":[{"match":{"path":"/v1/customers","body":{}},"response":{"body":{}}}]', '"api_responses":{"0":{"match":{"path":"/v1/customers","body":{}},"response":{"body":{}}}}', 'Step 0 is invalid: [api_responses] must be a list'],
+]);
+
+it('loads explicit empty JSON objects and lists in their declared positions', function () {
+    $fixture = FixtureFile::decode(fixtureWithEmptyContainers());
+
+    expect($fixture->provenance)->toBe([])
+        ->and($fixture->manifest->required)->toBe([])
+        ->and($fixture->steps[0]->events)->toBe([])
+        ->and($fixture->steps[0]->entitlements)->toBe([])
+        ->and($fixture->steps[0]->apiExchanges)->toHaveCount(1)
+        ->and($fixture->steps[0]->apiExchanges[0]->matchBody)->toBe([])
+        ->and($fixture->steps[0]->apiExchanges[0]->responseBody)->toBe([]);
+});
+
+it('refuses a match path with a trailing newline', function () {
+    expect(fn () => FixtureFile::decode(fixtureWithExchangePath(['method' => 'GET', 'path' => "/v1/customers\n"])))
+        ->toThrow(InvalidFixture::class, "Step 0 is invalid: the match path of [GET /v1/customers\n] has the segment [customers\n], which is neither a lowercase word nor a whole provider-id placeholder.");
+});
 
 it('defaults the provenance and manifest of a fixture that has neither', function () {
     $data = minimalFixtureArray();

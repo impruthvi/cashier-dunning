@@ -26,7 +26,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
  */
 final class MatchPath
 {
-    private const WORD = '/^[a-z0-9_]+$/';
+    private const WORD = '/\A[a-z0-9_]+\z/';
 
     /**
      * What is wrong with a match path, phrased to follow "the match path of

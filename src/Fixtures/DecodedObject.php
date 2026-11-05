@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
 
 use Closure;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use stdClass;
 
 /**
  * One JSON object from a decoded fixture, read a key at a time.
@@ -23,27 +24,27 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 final readonly class DecodedObject
 {
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>|stdClass  $data
      * @param  Closure(string): InvalidFixture  $refuse
      */
     private function __construct(
-        public array $data,
+        public array|stdClass $data,
         private Closure $refuse,
         private string $path,
     ) {}
 
     /**
-     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>|stdClass  $data
      * @param  Closure(string): InvalidFixture  $refuse  builds the exception from a reason such as "[match] must be an object"
      */
-    public static function of(array $data, Closure $refuse): self
+    public static function of(array|stdClass $data, Closure $refuse): self
     {
         return new self($data, $refuse, '');
     }
 
     /**
-     * A JSON object decodes to an array with string keys, and `{}` to `[]`.
-     * A list, even a one-element one, is not an object.
+     * Whether a programmatic array is a map. JSON objects are checked by their
+     * stdClass identity, not by this array convention.
      *
      * @phpstan-assert-if-true array<string, mixed> $value
      */
@@ -60,6 +61,32 @@ final readonly class DecodedObject
         }
 
         return true;
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->fields());
+    }
+
+    /** @return array<string, mixed> */
+    public function toArray(): array
+    {
+        return array_map(self::arrayValue(...), $this->fields());
+    }
+
+    private static function arrayValue(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $value = get_object_vars($value);
+        }
+
+        return is_array($value) ? array_map(self::arrayValue(...), $value) : $value;
+    }
+
+    /** @return array<string, mixed> */
+    private function fields(): array
+    {
+        return $this->data instanceof stdClass ? get_object_vars($this->data) : $this->data;
     }
 
     public function string(string $key, ?string $default = null): string
@@ -79,15 +106,15 @@ final readonly class DecodedObject
     /** @return array<string, mixed> */
     public function object(string $key): array
     {
-        return $this->nested($key)->data;
+        return $this->nested($key)->toArray();
     }
 
     /** The object under `$key`, read with its path prefixed; empty when absent. */
     public function nested(string $key): self
     {
-        $value = $this->value($key, []);
+        $value = $this->value($key, $this->data instanceof stdClass ? new stdClass : []);
 
-        if (! self::isObject($value)) {
+        if (! ($value instanceof stdClass || (is_array($this->data) && self::isObject($value)))) {
             throw $this->wrongType($key, 'an object');
         }
 
@@ -104,7 +131,7 @@ final readonly class DecodedObject
         $objects = [];
 
         foreach ($this->list($key) as $index => $value) {
-            if (! self::isObject($value)) {
+            if (! ($value instanceof stdClass || (is_array($this->data) && self::isObject($value)))) {
                 throw ($this->refuse)("[{$this->path($key)}[{$index}]] must be an object");
             }
 
@@ -159,8 +186,10 @@ final readonly class DecodedObject
 
     private function value(string $key, mixed $default): mixed
     {
-        if (array_key_exists($key, $this->data)) {
-            return $this->data[$key];
+        $fields = $this->fields();
+
+        if (array_key_exists($key, $fields)) {
+            return $fields[$key];
         }
 
         return $default ?? throw ($this->refuse)("missing key [{$this->path($key)}]");

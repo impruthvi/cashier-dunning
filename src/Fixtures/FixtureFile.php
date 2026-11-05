@@ -7,6 +7,7 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Support\AtomicFile;
 use Impruthvi\CashierDunning\Support\WebhookEvent;
 use JsonException;
+use stdClass;
 
 /**
  * Reads and writes fixture files.
@@ -50,12 +51,12 @@ final class FixtureFile
     public static function decode(string $json): Fixture
     {
         try {
-            $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $data = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
             throw new InvalidFixture('Fixture is not valid JSON: '.$e->getMessage(), previous: $e);
         }
 
-        if (! DecodedObject::isObject($data)) {
+        if (! $data instanceof stdClass) {
             throw new InvalidFixture('Fixture must decode to an object.');
         }
 

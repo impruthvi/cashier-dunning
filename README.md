@@ -368,8 +368,9 @@ A recording is replayed through your application before it is written, and only
 one that replays clean becomes a fixture. One that comes up short, cannot be
 turned into a fixture, or does not replay clean is quarantined instead, under
 `quarantine/` in your fixture directory. The artifact holds what arrived and what
-did not. If replay or saving failed, it also holds the replay report and
-the fixture that would have been written.
+did not. If replay or saving failed, it also holds the fixture that would have
+been written and the replay report when one is available. A refusal before
+replay can start has no replay report.
 
 Saving writes a complete temporary file beside the destination before
 replacing it. A failed attempt leaves any previous fixture untouched; concurrent

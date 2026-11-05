@@ -2,7 +2,7 @@
 
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
-use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\Normalizer;
 use Impruthvi\CashierDunning\Fixtures\Placeholder;
 use Impruthvi\CashierDunning\Replay\Placeholders;
@@ -78,12 +78,12 @@ it('refuses a fixture holding a token that is not a placeholder', function (stri
         ]];
     }
 
-    Fixture::fromArray([
+    expect(fn () => FixtureFile::decode(json_encode([
         'format_version' => 1,
         'provider' => 'stripe',
         'scenario' => 'typo',
         'steps' => [$step],
-    ]);
+    ], JSON_THROW_ON_ERROR)))->toThrow(InvalidFixture::class, "Step 0 is invalid: [{$token}] is not a placeholder this version of cashier-dunning understands.");
 })->with([
     'hyphen instead of underscore' => '{{sub-1}}',
     'kind that is not a provider id' => '{{subscription_1}}',
@@ -91,5 +91,4 @@ it('refuses a fixture holding a token that is not a placeholder', function (stri
     'offset in words' => '{{t+14days}}',
     'offset out of order' => '{{t+1h1d}}',
     'empty' => '{{}}',
-])->with(['event', 'api response'])
-    ->throws(InvalidFixture::class, 'is not a placeholder this version of cashier-dunning understands');
+])->with(['event', 'api response']);

@@ -130,8 +130,8 @@ it('refuses to replay a fixture that carries a field the allowlist does not perm
 it('refuses to replay a recording that came up short of its manifest', function () {
     // A short recording replays green forever. Refused, it says what is missing.
     registerReplayApp();
-    $root = applicationFixtureFrom('short', function (array $fixture): array {
-        $fixture['manifest']['required_events'][] = 'charge.dispute.created';
+    $root = applicationFixtureFrom('short', function (stdClass $fixture): stdClass {
+        $fixture->manifest->required_events[] = 'charge.dispute.created';
 
         return $fixture;
     });
