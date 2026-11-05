@@ -3,6 +3,9 @@
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Tests\Support\User;
 use Impruthvi\CashierDunning\Tests\TestCase;
+use Stripe\ApiRequestor;
+use Stripe\HttpClient\ClientInterface;
+use Stripe\StripeClient;
 
 uses(TestCase::class)->in(__DIR__);
 
@@ -112,4 +115,88 @@ function withLeakedEventField(array $fixture): array
     $fixture['steps'][0]['events'][0]['data']['object']['customer_email'] = 'someone@example.com';
 
     return $fixture;
+}
+
+/**
+ * Scripts Stripe. The recorder is exercised through the same transport seam
+ * replay uses, so the whole record path is testable with no account, no key and
+ * no network — which is also what keeps the test suite runnable on a fork PR.
+ */
+function scriptedStripe(array $script): array
+{
+    $client = new class($script) implements ClientInterface
+    {
+        /** @var list<string> */
+        public array $calls = [];
+
+        public function __construct(public array $script) {}
+
+        public function request($method, $absUrl, $headers, $params, $hasFile, $apiMode = 'v1', $maxNetworkRetries = null)
+        {
+            $path = (string) parse_url((string) $absUrl, PHP_URL_PATH);
+            $this->calls[] = strtoupper((string) $method).' '.$path;
+
+            foreach ($this->script as $pattern => $responses) {
+                [$wanted, $wantedPath] = explode(' ', $pattern, 2);
+
+                if (strtoupper((string) $method) !== $wanted || ! fnmatch($wantedPath, $path)) {
+                    continue;
+                }
+
+                return [json_encode($responses), 200, []];
+            }
+
+            return [json_encode(['error' => ['type' => 'invalid_request_error', 'message' => "unscripted {$method} {$path}"]]), 400, []];
+        }
+    };
+
+    $original = ApiRequestor::httpClient();
+    ApiRequestor::setHttpClient($client);
+
+    // The fake itself is returned rather than its call list: a reference does
+    // not survive list-destructuring, so handing back the array would give the
+    // test a copy that stops updating the moment it is assigned.
+    return [new StripeClient('sk_test_scripted'), $client, fn () => ApiRequestor::setHttpClient($original)];
+}
+
+function subscriptionEvent(string $type, string $status): array
+{
+    return [
+        'id' => 'evt_'.bin2hex(random_bytes(4)),
+        'object' => 'event',
+        'type' => $type,
+        'created' => 1767225600,
+        'data' => ['object' => [
+            'id' => 'sub_recorded',
+            'object' => 'subscription',
+            'status' => $status,
+            'customer' => 'cus_recorded',
+            'customer_email' => 'jenny.rosen@example.com',
+            'items' => ['data' => [[
+                'id' => 'si_1',
+                'quantity' => 1,
+                'price' => ['id' => 'price_1', 'product' => 'prod_1', 'nickname' => 'Negotiated rate'],
+            ]]],
+        ]],
+    ];
+}
+
+function recordingScript(array $events): array
+{
+    return [
+        'POST /v1/test_helpers/test_clocks' => ['id' => 'clock_1', 'object' => 'test_clock', 'status' => 'ready'],
+        'POST /v1/test_helpers/test_clocks/*/advance' => ['id' => 'clock_1', 'status' => 'advancing'],
+        'GET /v1/test_helpers/test_clocks/*' => ['id' => 'clock_1', 'object' => 'test_clock', 'status' => 'ready'],
+        'DELETE /v1/test_helpers/test_clocks/*' => ['id' => 'clock_1', 'deleted' => true],
+        'GET /v1/prices' => ['object' => 'list', 'data' => [['id' => 'price_1', 'object' => 'price']]],
+        'POST /v1/customers' => ['id' => 'cus_recorded', 'object' => 'customer'],
+        'POST /v1/customers/*' => ['id' => 'cus_recorded', 'object' => 'customer'],
+        'POST /v1/payment_methods/*/attach' => ['id' => 'pm_1', 'object' => 'payment_method'],
+        'POST /v1/subscriptions' => ['id' => 'sub_recorded', 'object' => 'subscription', 'status' => 'trialing'],
+        'GET /v1/subscriptions/*' => [
+            'id' => 'sub_recorded', 'object' => 'subscription', 'status' => 'past_due',
+            'customer' => 'cus_recorded', 'customer_email' => 'jenny.rosen@example.com',
+        ],
+        'GET /v1/events' => ['object' => 'list', 'data' => array_reverse($events)],
+    ];
 }
