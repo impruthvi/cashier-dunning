@@ -125,6 +125,29 @@ function removeFixtureDirectory(string $root): void
 }
 
 /**
+ * Puts a file where each directory should be, so creating it fails on every
+ * platform. chmod cannot promise that: Windows and privileged users ignore it.
+ *
+ * @return Closure(): void removes the files again, for the test's `finally`
+ */
+function blockDirectories(string ...$paths): Closure
+{
+    foreach ($paths as $path) {
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0755, true);
+        }
+
+        file_put_contents($path, 'blocked');
+    }
+
+    return function () use ($paths): void {
+        foreach ($paths as $path) {
+            unlink($path);
+        }
+    };
+}
+
+/**
  * @param  array<string, mixed>  $fixture
  * @return array<string, mixed>
  */

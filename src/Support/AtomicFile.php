@@ -8,6 +8,9 @@ use Throwable;
 /** @internal Writes complete local files; concurrent replacements are last-successful-write wins. */
 final class AtomicFile
 {
+    /** Names the tool that left a stray temporary file; the suffix is always `.tmp`. */
+    public const TEMPORARY_PREFIX = '.cashier-dunning-';
+
     public static function write(string $path, string $contents): void
     {
         $directory = dirname($path);
@@ -18,7 +21,7 @@ final class AtomicFile
 
         // Stay beside the destination: rename must not cross filesystems, and
         // tempnam can silently fall back to the system temporary directory.
-        $temporary = $directory.DIRECTORY_SEPARATOR.'.cashier-dunning-'.bin2hex(random_bytes(16)).'.tmp';
+        $temporary = $directory.DIRECTORY_SEPARATOR.self::TEMPORARY_PREFIX.bin2hex(random_bytes(16)).'.tmp';
         $stream = @fopen($temporary, 'xb');
 
         if ($stream === false) {

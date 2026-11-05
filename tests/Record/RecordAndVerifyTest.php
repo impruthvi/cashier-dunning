@@ -3,6 +3,7 @@
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
 use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
@@ -10,6 +11,7 @@ use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
+use Impruthvi\CashierDunning\Support\AtomicFile;
 use Laravel\Cashier\Events\WebhookReceived;
 use Stripe\Exception\RateLimitException;
 
@@ -76,6 +78,13 @@ function noFixtureIn(string $root): void
     expect(glob($root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'*.json') ?: [])->toBe([]);
 }
 
+/** The file at $path is exactly $fixture, and loads back as the scenario recorded. */
+function expectSavedFixture(string $path, Fixture $fixture): void
+{
+    expect(file_get_contents($path))->toBe(FixtureFile::encode($fixture))
+        ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario');
+}
+
 it('writes a recording that replays clean, with the entitlements the application granted', function () {
     billableUser();
     registerDunningPolicy();
@@ -96,9 +105,9 @@ it('writes a recording that replays clean, with the entitlements the application
 
     expect($path)->toBe(nativePath($this->root, 'stripe', 'test-scenario.json'))
         ->and($fixture->steps[0]->entitlements)->toEqual(['teams' => true, 'api' => true, 'projects' => 10])
-        ->and(file_get_contents($path))->toBe(FixtureFile::encode($fixture))
-        ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario')
         ->and(quarantinesIn($this->root))->toBe([]);
+
+    expectSavedFixture($path, $fixture);
 });
 
 it('quarantines a recording that ended before every required event arrived', function () {
@@ -223,8 +232,7 @@ it('quarantines a recording the simulation environment refused to replay', funct
 it('quarantines a verified fixture when its fixture directory is blocked', function () {
     billableUser();
     registerDunningPolicy();
-    mkdir($this->root);
-    file_put_contents($this->root.'/stripe', 'blocked');
+    $unblock = blockDirectories($this->root.'/stripe');
     $created = subscriptionEvent('customer.subscription.created', 'trialing');
 
     try {
@@ -242,7 +250,7 @@ it('quarantines a verified fixture when its fixture directory is blocked', funct
 
         expect(fn () => FixtureFile::read(quarantinesIn($this->root)[0]))->toThrow(InvalidFixture::class, 'format_version');
     } finally {
-        unlink($this->root.'/stripe');
+        $unblock();
     }
 });
 
@@ -274,7 +282,7 @@ it('leaves an existing fixture untouched when replacement cannot be written', fu
         expect($e->getMessage())->toContain('Cannot create temporary file')
             ->and(file_get_contents($path))->toBe($original)
             ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue()
-            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([]);
+            ->and(glob($this->root.'/stripe/'.AtomicFile::TEMPORARY_PREFIX.'*'))->toBe([]);
     } finally {
         chmod($this->root.'/stripe', 0755);
     }
@@ -292,7 +300,7 @@ it('cleans up the temporary file when the final rename fails', function () {
 
         expect($e->getMessage())->toContain('Cannot replace file ['.$destination.']')
             ->and(is_dir($destination))->toBeTrue()
-            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([])
+            ->and(glob($this->root.'/stripe/'.AtomicFile::TEMPORARY_PREFIX.'*'))->toBe([])
             ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue();
     } finally {
         rmdir($destination);
@@ -301,9 +309,7 @@ it('cleans up the temporary file when the final rename fails', function () {
 
 it('retains both failures when neither the fixture nor its quarantine can be saved', function () {
     billableUser();
-    mkdir($this->root);
-    file_put_contents($this->root.'/stripe', 'blocked fixture directory');
-    file_put_contents($this->root.'/quarantine', 'blocked quarantine directory');
+    $unblock = blockDirectories($this->root.'/stripe', $this->root.'/quarantine');
 
     try {
         $e = refusedRecording($this->root, recordingScript([
@@ -322,8 +328,7 @@ it('retains both failures when neither the fixture nor its quarantine can be sav
             ->and($e->report?->passed())->toBeTrue()
             ->and(quarantinesIn($this->root))->toBe([]);
     } finally {
-        unlink($this->root.'/stripe');
-        unlink($this->root.'/quarantine');
+        $unblock();
     }
 });
 
@@ -335,8 +340,7 @@ it('adds nothing to the log context once the refusal is quarantined', function (
 });
 
 it('keeps the original recording refusal when quarantine fails', function () {
-    mkdir($this->root);
-    file_put_contents($this->root.'/quarantine', 'blocked');
+    $unblock = blockDirectories($this->root.'/quarantine');
 
     try {
         $e = refusedRecording($this->root, recordingScript([
@@ -348,7 +352,7 @@ it('keeps the original recording refusal when quarantine fails', function () {
             ->and($e->quarantineFailure)->toBeInstanceOf(RuntimeException::class)
             ->and($e->artifactPath)->toBeNull();
     } finally {
-        unlink($this->root.'/quarantine');
+        $unblock();
     }
 });
 
@@ -369,11 +373,11 @@ it('replaces a fixture without modifying the previous file in place', function (
         $result = (new RecordAndVerify(new Recorder($stripe, eventTimeoutSeconds: 0), app(ReplayRunner::class), $this->root))
             ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
+        expectSavedFixture($path, $result['fixture']);
+
         expect($result['path'])->toBe($path)
-            ->and(file_get_contents($path))->toBe(FixtureFile::encode($result['fixture']))
-            ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario')
             ->and(file_get_contents($previous))->toBe($original)
-            ->and(glob($this->root.'/stripe/.cashier-dunning-*'))->toBe([]);
+            ->and(glob($this->root.'/stripe/'.AtomicFile::TEMPORARY_PREFIX.'*'))->toBe([]);
     } finally {
         $restore();
         unlink($previous);

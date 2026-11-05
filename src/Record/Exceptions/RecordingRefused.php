@@ -125,19 +125,7 @@ final class RecordingRefused extends RuntimeException
     /** Retain the original cause as well as the failure to save diagnostics. */
     public function quarantineFailed(Throwable $cause): self
     {
-        return new self(
-            scenario: $this->scenario,
-            reason: $this->reason,
-            refusal: $this->refusal,
-            consequence: $this->consequence,
-            missing: $this->missing,
-            captured: $this->captured,
-            startedAt: $this->startedAt,
-            report: $this->report,
-            fixture: $this->fixture,
-            previous: $this->getPrevious(),
-            quarantineFailure: $cause,
-        );
+        return $this->copy(quarantineFailure: $cause);
     }
 
     /**
@@ -154,6 +142,15 @@ final class RecordingRefused extends RuntimeException
     /** The same refusal, now that what it captured has been quarantined at this path. */
     public function quarantinedAt(string $artifactPath): self
     {
+        return $this->copy(artifactPath: $artifactPath);
+    }
+
+    /**
+     * The same refusal with the quarantine's outcome: where it was written, or
+     * why it could not be. The message is composed again, so it reports that outcome.
+     */
+    private function copy(?string $artifactPath = null, ?Throwable $quarantineFailure = null): self
+    {
         return new self(
             scenario: $this->scenario,
             reason: $this->reason,
@@ -166,6 +163,7 @@ final class RecordingRefused extends RuntimeException
             fixture: $this->fixture,
             artifactPath: $artifactPath,
             previous: $this->getPrevious(),
+            quarantineFailure: $quarantineFailure,
         );
     }
 

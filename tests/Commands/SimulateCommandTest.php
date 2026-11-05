@@ -140,9 +140,7 @@ it('reports save and quarantine failures and exits unsuccessfully', function () 
         subscriptionEvent('customer.subscription.created', 'trialing'),
         subscriptionEvent('customer.subscription.updated', 'active'),
     ]);
-    mkdir($root);
-    file_put_contents($root.'/stripe', 'blocked');
-    file_put_contents($root.'/quarantine', 'blocked');
+    $unblock = blockDirectories($root.'/stripe', $root.'/quarantine');
 
     try {
         $exit = Artisan::call('billing:simulate downgrade-over-usage-limit --record');
@@ -151,8 +149,7 @@ it('reports save and quarantine failures and exits unsuccessfully', function () 
             ->and(Artisan::output())->toContain('could not be saved', 'Quarantine could not be saved', 'No diagnostic artifact was written')
             ->and(Artisan::output())->not->toContain('Diagnostics written to', 'Wrote '.$root);
     } finally {
-        unlink($root.'/stripe');
-        unlink($root.'/quarantine');
+        $unblock();
         $cleanup();
     }
 });
