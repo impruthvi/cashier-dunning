@@ -82,16 +82,24 @@ final class RecordingRefused extends RuntimeException
         );
     }
 
-    /** The replay ran, and the application did not get through it. */
-    public static function didNotReplay(Fixture $fixture, CarbonImmutable $startedAt, ReplayReport $report): self
+    /**
+     * The replay ran, and the application did not get through it.
+     *
+     * @param  list<array<string, mixed>>  $captured  what Stripe sent, not the fixture's normalised copy
+     */
+    public static function didNotReplay(Fixture $fixture, array $captured, CarbonImmutable $startedAt, ReplayReport $report): self
     {
-        return self::unreplayable($fixture, $startedAt, $report->verdict(), report: $report);
+        return self::unreplayable($fixture, $captured, $startedAt, $report->verdict(), report: $report);
     }
 
-    /** The simulation environment refused to start or finish the replay. */
-    public static function replayRefused(Fixture $fixture, CarbonImmutable $startedAt, SimulationFailed $cause): self
+    /**
+     * The simulation environment refused to start or finish the replay.
+     *
+     * @param  list<array<string, mixed>>  $captured  what Stripe sent, not the fixture's normalised copy
+     */
+    public static function replayRefused(Fixture $fixture, array $captured, CarbonImmutable $startedAt, SimulationFailed $cause): self
     {
-        return self::unreplayable($fixture, $startedAt, $cause->getMessage(), previous: $cause);
+        return self::unreplayable($fixture, $captured, $startedAt, $cause->getMessage(), previous: $cause);
     }
 
     /** The same refusal, now that what it captured has been quarantined at this path. */
@@ -136,21 +144,15 @@ final class RecordingRefused extends RuntimeException
         );
     }
 
+    /** @param  list<array<string, mixed>>  $captured */
     private static function unreplayable(
         Fixture $fixture,
+        array $captured,
         CarbonImmutable $startedAt,
         string $reason,
         ?ReplayReport $report = null,
         ?Throwable $previous = null,
     ): self {
-        $captured = [];
-
-        foreach ($fixture->steps as $step) {
-            foreach ($step->events as $event) {
-                $captured[] = $event;
-            }
-        }
-
         return new self(
             scenario: $fixture->scenario,
             reason: $reason,

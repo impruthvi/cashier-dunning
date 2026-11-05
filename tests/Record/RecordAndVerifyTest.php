@@ -115,6 +115,7 @@ it('quarantines a recording that ended before every required event arrived', fun
     $artifact = onlyQuarantineIn($this->root);
 
     expect($e->missing)->toBe(['invoice.payment_failed'])
+        ->and($e->artifactPath)->toBe(quarantinesIn($this->root)[0])
         ->and($e->getMessage())->toContain('Never arrived: invoice.payment_failed')
         ->and($e->getMessage())->toContain('No fixture was written')
         ->and($e->getMessage())->toContain((string) $e->artifactPath)
@@ -182,9 +183,12 @@ it('quarantines a recording the application could not replay, with the replay an
         throw new RuntimeException('the application fell over');
     });
 
-    $e = refusedRecording($this->root, recordingScript([
-        subscriptionEvent('customer.subscription.created', 'trialing'),
-    ]));
+    // The scenario never asked for the update, so the fixture drops it. The
+    // quarantine keeps what Stripe actually sent, real ids included.
+    $created = subscriptionEvent('customer.subscription.created', 'trialing');
+    $updated = subscriptionEvent('customer.subscription.updated', 'active');
+
+    $e = refusedRecording($this->root, recordingScript([$created, $updated]));
 
     $artifacts = quarantinesIn($this->root);
     $artifact = onlyQuarantineIn($this->root);
@@ -194,7 +198,8 @@ it('quarantines a recording the application could not replay, with the replay an
         ->and($e->report?->passed())->toBeFalse()
         ->and($artifact['replay']['passed'])->toBeFalse()
         ->and($artifact['fixture']['scenario'])->toBe('test-scenario')
-        ->and($artifact['captured_events'])->toHaveCount(1);
+        ->and(array_column($artifact['captured_events'], 'id'))->toEqualCanonicalizing([$created['id'], $updated['id']])
+        ->and($artifact['undeclared_events'])->toBe(['customer.subscription.updated']);
 
     // Carrying a whole fixture must not make the quarantine loadable as one.
     expect(fn () => FixtureFile::read($artifacts[0]))->toThrow(InvalidFixture::class, 'format_version');
@@ -204,14 +209,17 @@ it('quarantines a recording the application could not replay, with the replay an
 
 it('quarantines a recording the simulation environment refused to replay', function () {
     // No billable is registered, so the replay cannot start at all.
-    $e = refusedRecording($this->root, recordingScript([
-        subscriptionEvent('customer.subscription.created', 'trialing'),
-    ]));
+    $created = subscriptionEvent('customer.subscription.created', 'trialing');
+
+    $e = refusedRecording($this->root, recordingScript([$created]));
+
+    $artifact = onlyQuarantineIn($this->root);
 
     expect($e->getMessage())->toContain('did not replay clean')
         ->and($e->getPrevious())->toBeInstanceOf(SimulationFailed::class)
         ->and($e->report)->toBeNull()
-        ->and(onlyQuarantineIn($this->root)['fixture']['scenario'])->toBe('test-scenario');
+        ->and($artifact['fixture']['scenario'])->toBe('test-scenario')
+        ->and(array_column($artifact['captured_events'], 'id'))->toBe([$created['id']]);
 
     noFixtureIn($this->root);
 });

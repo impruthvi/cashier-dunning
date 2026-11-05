@@ -11,13 +11,19 @@ it('records a scenario into a fixture', function () {
         subscriptionEvent('customer.subscription.updated', 'past_due'),
     ]));
 
-    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+    ['fixture' => $fixture, 'captured' => $captured] = (new Recorder($stripe, eventTimeoutSeconds: 0))
         ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     expect($fixture->scenario)->toBe('test-scenario')
         ->and($fixture->steps)->toHaveCount(2)
         ->and($fixture->eventTypes())->toContain('customer.subscription.created')
         ->and($fake->calls)->toContain('POST /v1/test_helpers/test_clocks');
+
+    // The fixture keeps only what the scenario declared, normalised. The raw
+    // capture keeps everything Stripe sent, as it sent it.
+    expect(array_column($captured, 'type'))->toContain('customer.subscription.updated')
+        ->and($fixture->eventTypes())->not->toContain('customer.subscription.updated')
+        ->and($captured[0]['id'])->toStartWith('evt_');
 
     $restore();
 });
@@ -27,7 +33,7 @@ it('normalises ids so two recordings of the same journey match', function () {
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
         ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     expect($fixture->steps[0]->events[0]['data']['object']['id'])->toBe('{{sub_1}}')
@@ -42,7 +48,7 @@ it('redacts on the way out rather than as a review step somebody forgets', funct
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
         ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     $object = $fixture->steps[0]->events[0]['data']['object'];
@@ -59,7 +65,7 @@ it('records the subscription state at each step so replay cannot answer out of t
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
         ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     expect($fixture->steps[0]->apiExchanges)->toHaveCount(1)
@@ -137,7 +143,7 @@ it('gives two different subscriptions two different placeholders', function () {
 
     [$stripe, , $restore] = scriptedStripe($script);
 
-    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
         ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
 
     $ids = [];

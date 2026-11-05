@@ -56,7 +56,9 @@ final readonly class RecordAndVerify
         $startsAt ??= CarbonImmutable::now('UTC')->subDay()->startOfHour();
 
         try {
-            $fixture = $this->verified($this->recorder->record($scenario, $startsAt), $startsAt);
+            ['fixture' => $recorded, 'captured' => $captured] = $this->recorder->record($scenario, $startsAt);
+
+            $fixture = $this->verified($recorded, $captured, $startsAt);
         } catch (RecordingRefused $refusal) {
             throw $refusal->quarantinedAt($this->quarantine($scenario, $refusal));
         }
@@ -73,18 +75,20 @@ final readonly class RecordAndVerify
     /**
      * The recording with the entitlements the application granted at each step.
      *
+     * @param  list<array<string, mixed>>  $captured  what Stripe sent, kept for the quarantine
+     *
      * @throws RecordingRefused when the recording does not replay clean
      */
-    private function verified(Fixture $recorded, CarbonImmutable $startsAt): Fixture
+    private function verified(Fixture $recorded, array $captured, CarbonImmutable $startsAt): Fixture
     {
         try {
             $report = $this->runner->run($recorded);
         } catch (SimulationFailed $e) {
-            throw RecordingRefused::replayRefused($recorded, $startsAt, $e);
+            throw RecordingRefused::replayRefused($recorded, $captured, $startsAt, $e);
         }
 
         if (! $report->passed()) {
-            throw RecordingRefused::didNotReplay($recorded, $startsAt, $report);
+            throw RecordingRefused::didNotReplay($recorded, $captured, $startsAt, $report);
         }
 
         return $recorded->withEntitlements(array_map(

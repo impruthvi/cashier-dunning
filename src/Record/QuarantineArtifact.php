@@ -18,8 +18,10 @@ use Impruthvi\CashierDunning\Scenarios\Scenario;
  * It exists because the alternative is a black box. Recording is rate limited,
  * slow, and only reproducible against a live Stripe account; telling someone
  * "that didn't work, try again" costs them twenty invoices of quota and tells
- * them nothing about why. The artifact holds what did arrive, what didn't, when
- * each event landed, and the request ids Stripe support will ask for.
+ * them nothing about why. The artifact holds what did arrive, what didn't, and
+ * when each event landed. It has a place for the request ids Stripe support
+ * will ask for, but the recorder does not collect them yet: see
+ * https://github.com/impruthvi/cashier-dunning/issues/50.
  *
  * A recording that was complete but did not replay clean also keeps the replay
  * and the fixture it would have written, because there the diagnosis lives in

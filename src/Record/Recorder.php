@@ -51,11 +51,19 @@ final readonly class Recorder
     ) {}
 
     /**
+     * The fixture, and every event Stripe sent as it arrived.
+     *
+     * The raw capture comes back too, because the fixture is redacted,
+     * normalised and holds only the events the scenario declared. A caller that
+     * has to quarantine a recording later needs what Stripe actually sent.
+     *
+     * @return array{fixture: Fixture, captured: list<array<string, mixed>>}
+     *
      * @throws RecordingRefused when the recording is incomplete or cannot be
      *                          written as a fixture. It carries what was
      *                          captured, so the caller can quarantine it.
      */
-    public function record(Scenario $scenario, CarbonImmutable $startsAt): Fixture
+    public function record(Scenario $scenario, CarbonImmutable $startsAt): array
     {
         $clock = TestClock::create($this->stripe, $startsAt, $this->clockTimeoutSeconds);
         $poller = new EventPoller($this->stripe, $startsAt->getTimestamp());
@@ -99,7 +107,7 @@ final readonly class Recorder
         }
 
         try {
-            return new Fixture(
+            $fixture = new Fixture(
                 provider: Provider::Stripe,
                 scenario: $scenario->name,
                 provenance: $this->provenance($startsAt, $state),
@@ -113,6 +121,8 @@ final readonly class Recorder
             // record of what Stripe sent.
             throw RecordingRefused::unpublishable($scenario->name, $state->captured, $startsAt, $e);
         }
+
+        return ['fixture' => $fixture, 'captured' => $state->captured];
     }
 
     private function recordStep(
