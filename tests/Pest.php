@@ -1,7 +1,11 @@
 <?php
 
 use Impruthvi\CashierDunning\CashierDunning;
+use Impruthvi\CashierDunning\Entitlements\EntitlementChange;
 use Impruthvi\CashierDunning\Fixtures\Manifest;
+use Impruthvi\CashierDunning\Runner\EventResult;
+use Impruthvi\CashierDunning\Runner\ReplayReport;
+use Impruthvi\CashierDunning\Runner\StepResult;
 use Impruthvi\CashierDunning\Scenarios\Action;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
@@ -222,4 +226,38 @@ function twoStepScenario(array $required): Scenario
         ],
         manifest: new Manifest(required: $required),
     );
+}
+
+/** A report whose one step passed, for the renderers to draw. */
+function passingReport(): ReplayReport
+{
+    return new ReplayReport('demo', [
+        new StepResult(
+            index: 0,
+            label: 'trial starts',
+            advanceTo: '0d',
+            events: [new EventResult('evt_1', 'customer.subscription.created', 200, [
+                new EntitlementChange('teams', false, true, 'customer.subscription.created'),
+            ])],
+            expectedEntitlements: ['teams' => true],
+            actualEntitlements: ['teams' => true],
+            mismatches: [],
+        ),
+    ], assertions: 2, completed: true);
+}
+
+/** A report whose step ended entitled to something the recording did not say. */
+function divergingReport(): ReplayReport
+{
+    return new ReplayReport('demo', [
+        new StepResult(
+            index: 0,
+            label: 'payment fails',
+            advanceTo: '14d1h',
+            events: [new EventResult('evt_1', 'invoice.payment_failed', 200, [])],
+            expectedEntitlements: ['teams' => true, 'projects' => 10],
+            actualEntitlements: ['teams' => false, 'projects' => 10],
+            mismatches: ['teams: recording says true, application says false'],
+        ),
+    ], assertions: 3, completed: false);
 }

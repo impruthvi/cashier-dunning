@@ -6,8 +6,6 @@ use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
-afterEach(fn () => CashierDunning::flush());
-
 /**
  * The loop closing. This fixture was recorded against a real Stripe test
  * account by the recorder in this package, and is replayed here with no

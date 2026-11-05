@@ -6,7 +6,6 @@ use Impruthvi\CashierDunning\Tests\Support\DunningMailer;
 
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
-    CashierDunning::flush();
     DunningMailer::reset();
 });
 

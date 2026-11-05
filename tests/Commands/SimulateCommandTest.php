@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Laravel\Cashier\Events\WebhookReceived;
 
@@ -55,7 +54,6 @@ function scriptedRecording(array $events): array
 
     return [$root, function () use ($root, $restore): void {
         $restore();
-        CashierDunning::flush();
 
         foreach (['stripe', 'quarantine'] as $directory) {
             array_map(unlink(...), glob($root.'/'.$directory.'/*.json') ?: []);

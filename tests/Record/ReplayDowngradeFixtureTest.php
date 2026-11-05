@@ -8,8 +8,6 @@ use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
-afterEach(fn () => CashierDunning::flush());
-
 function downgradeFixture(): Fixture
 {
     return (new FixtureRepository)->find('downgrade-over-usage-limit');

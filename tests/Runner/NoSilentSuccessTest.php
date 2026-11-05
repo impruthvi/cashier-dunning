@@ -6,8 +6,6 @@ use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
-afterEach(fn () => CashierDunning::flush());
-
 /** @param list<array<string, mixed>> $steps */
 function fixtureOf(array $steps): Fixture
 {

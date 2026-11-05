@@ -4,8 +4,6 @@ use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Reporting\JsonReport;
 use Impruthvi\CashierDunning\Tests\Support\User;
 
-afterEach(fn () => CashierDunning::flush());
-
 it('describes the run in a shape a machine can compare', function () {
     $report = JsonReport::toArray(passingReport());
 

@@ -86,8 +86,6 @@ it('answers a real Cashier call from the fixture with no network', function () u
 
     expect($subscription->status)->toBe('past_due')
         ->and($calls)->toHaveCount(1);
-
-    CashierDunning::flush();
 });
 
 it('refuses a call the fixture never recorded and says what the step can answer', function () use ($start) {
@@ -208,8 +206,6 @@ it('replays a recorded error response as a real Stripe exception', function () u
         fn () => Cashier::stripe()->subscriptions->create(['customer' => 'cus_replay1']),
         $start,
     ))->toThrow(CardException::class, 'Your card was declined.');
-
-    CashierDunning::flush();
 });
 
 it('refuses a file upload', function () use ($start) {

@@ -9,7 +9,6 @@ use Laravel\Cashier\Events\WebhookReceived;
 
 beforeEach(fn () => DunningMailer::reset());
 afterEach(function () {
-    CashierDunning::flush();
     DunningMailer::reset();
 });
 
