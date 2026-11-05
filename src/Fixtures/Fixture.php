@@ -3,6 +3,7 @@
 namespace Impruthvi\CashierDunning\Fixtures;
 
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use stdClass;
 
 /**
  * A recorded billing lifecycle: an ordered timeline of clock advances, the
@@ -53,16 +54,17 @@ final readonly class Fixture
         }
     }
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
+    /** @param array<string, mixed>|stdClass $data */
+    public static function fromArray(array|stdClass $data): self
     {
+        $fixture = DecodedObject::of($data, InvalidFixture::malformed(...));
+
         foreach (['format_version', 'provider', 'scenario', 'steps'] as $key) {
-            if (! array_key_exists($key, $data)) {
+            if (! $fixture->has($key)) {
                 throw InvalidFixture::missingKey($key);
             }
         }
 
-        $fixture = DecodedObject::of($data, InvalidFixture::malformed(...));
         $version = $fixture->int('format_version');
 
         if ($version !== self::FORMAT_VERSION) {

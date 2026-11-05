@@ -255,6 +255,7 @@ it('quarantines a recording the simulation environment refused to replay', funct
     expect($e->getMessage())->toContain('did not replay clean')
         ->and($e->getPrevious())->toBeInstanceOf(SimulationFailed::class)
         ->and($e->report)->toBeNull()
+        ->and($artifact)->not->toHaveKey('replay')
         ->and($artifact['fixture']['scenario'])->toBe('test-scenario')
         ->and(array_column($artifact['captured_events'], 'id'))->toBe([$created['id']]);
 

@@ -1,6 +1,7 @@
 <?php
 
 use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -40,6 +41,12 @@ function recordAndWrite(string $scenarioName): Fixture
     ))->record($scenario);
 
     expect($fixture->satisfiesManifest())->toBeTrue();
+
+    $saved = FixtureFile::read($path);
+    $report = app(ReplayRunner::class)->run($saved);
+
+    expect($saved->scenario)->toBe($scenarioName)
+        ->and($report->passed())->toBeTrue();
 
     fwrite(STDERR, "\n---RECORDED--- {$path}\n");
     foreach ($fixture->steps as $step) {

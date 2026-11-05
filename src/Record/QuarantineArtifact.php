@@ -24,9 +24,10 @@ use Impruthvi\CashierDunning\Support\WebhookEvent;
  * when each event landed, along with the response request ids Stripe support
  * will ask for.
  *
- * A recording that did not replay clean, or could not be saved, keeps the replay
- * and the fixture it would have written, because there the diagnosis lives in
- * the replay. The fixture is nested, so the artifact still has no top-level
+ * A recording that did not replay clean, or could not be saved, keeps the
+ * fixture it would have written and the replay report when one is available.
+ * A refusal before replay can start has no report. The fixture is nested,
+ * so the artifact still has no top-level
  * `format_version` and still cannot be loaded.
  */
 final readonly class QuarantineArtifact
