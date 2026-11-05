@@ -2,6 +2,74 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.4.0 - 2026-11-05
+
+This release hardens fixture loading and recording failures, improves diagnostics, and introduces breaking changes for consumers using the PHP APIs directly.
+
+**User-Facing Fixes**
+
+- Fixture validation now runs consistently when loading through replay, `billing:doctor`, or other file readers. Invalid fixtures fail early with contextual diagnostics instead of reaching replay unchecked.
+- Fresh recordings that cannot become valid fixtures, fail replay, or cannot be saved are reported as recording refusals. Failed replays display their timeline when a report is available.
+- Recording refusals retain captured-event metadata and Stripe response request IDs in quarantine artifacts. Replay/save failures additionally retain the candidate fixture and any available replay report. A refusal before replay starts has no report.
+- Fixture and quarantine saves use complete temporary files before replacement. Failed saves leave previous fixtures untouched; quarantine filenames include random suffixes to avoid collisions. These guarantees protect against partial writes, not power-loss durability.
+- If saving quarantine also fails, diagnostics retain both failures without claiming an artifact exists.
+- Timeline highlighting now agrees with replay’s strict entitlement comparison: integer `10` and string `"10"` are different even when their displayed values match.
+- Recording and replay share one placeholder grammar. `Normalizer::placeholderFor()` consistently names IDs used in both paths and payloads.
+
+**Breaking PHP API Changes And Migration**
+
+- **`RecordAndVerify` requires `$fixturePath` as its third constructor argument.** Its `record()` method now saves the verified fixture and returns `{fixture, path}`, not `{fixture, report}`. Remove caller-owned saving. If you need a `ReplayReport`, replay the saved fixture separately.
+- **`Record\Exceptions\IncompleteRecording` is removed.** Catch `RecordingRefused` instead. This is not a simple rename: factories have different arguments, and `captured` now contains event payload arrays rather than event-type strings. Use `array_column($exception->captured, 'type')` when type names are needed.
+- **`Recorder` is now internal and readonly.** Direct users must account for removal of its quarantine-directory constructor argument and `capturedEvents()`. `record()` requires an explicit start time and returns `{fixture, captured, requestIds}` instead of a `Fixture`. Prefer the CLI or `RecordAndVerify` workflow over standalone recorder use.
+- **`ApiExchange::fromArray()` and `Manifest::fromArray()` are removed.** Their decoding replacements accept an internal `DecodedObject`. External consumers should use constructors for programmatic objects or `FixtureFile::read()`/`decode()` for complete fixtures.
+- **`ApiExchange::matches()` is removed.** Request matching belongs to `FixtureHttpClient`, where placeholders and step scoping are handled.
+- **`Scenario`, `ScenarioStep`, and `Action` lose `fromArray()` and `toArray()`.** Construct scenarios in PHP using their constructors and factories; consumers needing another serialization format must own that conversion.
+- **`Allowlist::assert()` is removed.** Use the loading boundary to refuse invalid fixtures, or inspect `disallowedPaths()` when collecting field diagnostics.
+- **`Allowlist::applyToObject()` no longer accepts an event type.** Rules are selected from the provider object’s own `object` field. Subscription-item rules are included; unknown object kinds remain fail-closed.
+- **`DisallowedField::inEvent()` is replaced by step-aware factories**, including `inStepEvent($stepIndex, $eventType, $paths)`. `DisallowedField` now extends `InvalidFixture`, so catching `InvalidFixture` includes allowlist refusals.
+- **`Provider::fromFixture()` requires a string**, rather than accepting `mixed`. Validate direct-call inputs before invoking it.
+
+**Stricter Fixture Validation**
+
+Fixture format version remains **1**, but previously accepted malformed fixtures may now fail to load.
+
+Loading refuses:
+
+- Fields with wrong types, including numeric-string response statuses and non-scalar entitlement values.
+- JSON objects where lists are required, and lists where objects are required—including empty containers and numeric-keyed objects.
+- Events without string `type` and `id` fields.
+- Missing manifest-required events.
+- Disallowed fields in events or recorded responses, and disallowed request parameters in match bodies.
+- Unknown placeholder tokens in events and API exchanges.
+- Missing or malformed match paths, including query strings, fragments, literal provider IDs, embedded/time placeholders, invalid segments, and trailing newlines.
+- Recognized literal provider IDs appearing as whole string values anywhere in events, match bodies, or response bodies.
+
+**Fixture migration guidance**
+
+- Use `{}` for empty object fields such as `manifest`, `provenance`, `entitlements`, and API bodies; use `[]` for lists such as `events` and `api_responses`.
+- Write response status as `200`, not `"200"`.
+- Use consistent placeholders such as `{{cus_1}}` instead of recognized literal IDs.
+- Keep paths to lowercase literal segments and whole ID placeholders; put request parameters in the match body.
+- Correct or re-record incomplete fixtures rather than relying on previously unchecked content.
+
+Absent optional fields retain their defaults. Unsupported ID prefixes such as `acct_` and `seti_`, embedded IDs in body strings, and fixture metadata remain outside literal-ID value validation.
+
+All three shipped fixtures remain byte-identical and round-trip unchanged.
+
+**Development And Release Tooling**
+
+- Added `composer check`, running formatting, analysis, then tests.
+- PHPStan now runs at level 9 with an empty baseline, refreshed autoloading, and an explicit memory limit.
+- Required CI includes static analysis. PR API-compatibility checks report breaking changes as warnings for release-note preparation.
+- Release changelog updates now arrive through CI-checked pull requests instead of direct pushes to main.
+- Strengthened refusal diagnostics, Windows-safe test setup, quarantine coverage, and independent saved-file replay assertions in live recording tests.
+
+**Requirements And Verification**
+
+Requirements remain PHP 8.3+, Laravel 12 or 13, Cashier 16, and Stripe PHP 17.4–21 within the declared Composer constraints.
+
+Local checks and merged-main CI pass. **Two live Stripe recording tests remain skipped without a test key; this release has not been freshly verified against a live Stripe test account.**
+
 ## v0.3.0 - 2026-11-04
 
 ### Changed
@@ -112,6 +180,7 @@ new billable preflight will refuse to run until it is gone:
 ```
 The billable factory created [App\Models\User] with stripe_id [cus_replay1],
 but Cashier::findBillable() returned a different record.
+
 
 
 
