@@ -18,6 +18,16 @@ use Stripe\StripeClient;
 uses(TestCase::class)->in(__DIR__);
 
 /**
+ * A path as the code under test reports it. The package joins paths with
+ * DIRECTORY_SEPARATOR, so an expectation built with '/' fails only on Windows,
+ * and only in CI.
+ */
+function nativePath(string ...$segments): string
+{
+    return implode(DIRECTORY_SEPARATOR, $segments);
+}
+
+/**
  * Register the README's factory-per-call setup. Creating a billable here and
  * capturing it would hide collisions between consecutive replay invocations.
  */

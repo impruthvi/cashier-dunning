@@ -94,7 +94,7 @@ it('writes a recording that replays clean, with the entitlements the application
         $restore();
     }
 
-    expect($path)->toBe($this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json')
+    expect($path)->toBe(nativePath($this->root, 'stripe', 'test-scenario.json'))
         ->and($fixture->steps[0]->entitlements)->toEqual(['teams' => true, 'api' => true, 'projects' => 10])
         ->and(file_get_contents($path))->toBe(FixtureFile::encode($fixture))
         ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario')
@@ -249,7 +249,7 @@ it('quarantines a verified fixture when its publication directory is blocked', f
 it('leaves an existing fixture untouched when replacement cannot be written', function () {
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
-    $path = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
+    $path = nativePath($this->root, 'stripe', 'test-scenario.json');
     $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
     file_put_contents($path, $original);
     chmod($this->root.'/stripe', 0555);
@@ -282,7 +282,7 @@ it('leaves an existing fixture untouched when replacement cannot be written', fu
 
 it('cleans up the temporary file when the final rename fails', function () {
     billableUser();
-    $destination = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
+    $destination = nativePath($this->root, 'stripe', 'test-scenario.json');
     mkdir($destination, 0755, true);
 
     try {
@@ -312,8 +312,8 @@ it('retains both failures when neither publication nor quarantine can be written
 
         expect($e->getMessage())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
             ->and($e->getMessage())->not->toContain('Diagnostics written to')
-            ->and($e->getPrevious()?->getMessage())->toContain($this->root.DIRECTORY_SEPARATOR.'stripe')
-            ->and($e->quarantineFailure?->getMessage())->toContain($this->root.DIRECTORY_SEPARATOR.'quarantine')
+            ->and($e->getPrevious()?->getMessage())->toContain(nativePath($this->root, 'stripe'))
+            ->and($e->quarantineFailure?->getMessage())->toContain(nativePath($this->root, 'quarantine'))
             ->and($e->artifactPath)->toBeNull()
             ->and($e->captured)->toHaveCount(1)
             ->and($e->report?->passed())->toBeTrue()
@@ -345,7 +345,7 @@ it('keeps the original recording refusal when quarantine fails', function () {
 it('replaces the published fixture without modifying the previous file in place', function () {
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
-    $path = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
+    $path = nativePath($this->root, 'stripe', 'test-scenario.json');
     $previous = $this->root.'/previous.json';
     $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
     file_put_contents($path, $original);
