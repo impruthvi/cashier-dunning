@@ -399,6 +399,14 @@ id placeholders, or that is missing an event its manifest requires. A field
 of the wrong type, such as a status of `"200"` or an event with no string
 `type`, is refused too, rather than cast.
 
+Loading also refuses a whole string value that is a recognised literal provider
+id in an event, API response body or match body, including nested lists. Use
+placeholders such as `{{cus_1}}` instead of `cus_RealId`. The refusal names the
+step, payload location and placeholder kind, plus the method and match path for
+an API exchange. This uses the same supported id kinds as recording: unsupported
+prefixes such as `acct_` and `seti_`, ids embedded in longer strings, and fixture
+metadata are outside this rule. Keys remain subject to the field allowlist.
+
 `cancel-at-period-end-then-canceled-early` is the exception: it is hand-authored
 from Stripe's documented subscription object rather than recorded, because it
 reproduces [laravel/cashier-stripe#1791][1791] and the point is to show the

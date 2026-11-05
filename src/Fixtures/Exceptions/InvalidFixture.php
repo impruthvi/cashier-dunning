@@ -72,6 +72,14 @@ class InvalidFixture extends RuntimeException
         return new self("Step {$index} is invalid: {$reason}");
     }
 
+    public static function literalProviderId(int $step, string $where, string $path, string $kind): self
+    {
+        return self::malformedStep(
+            $step,
+            "{$where} contains a literal provider id at [{$path}]. Use a {$kind} placeholder such as {{".$kind.'_1}}.'
+        );
+    }
+
     public static function unrecognisedPlaceholder(int $index, string $token): self
     {
         return self::malformedStep(
