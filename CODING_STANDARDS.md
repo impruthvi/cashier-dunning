@@ -31,5 +31,8 @@ expectation passes on Linux and fails only in the Windows CI job.
 For every test whose body changed, list each removed `expect(...)` or `->and(...)` and what
 replaces it: a new assertion, or a fixture match that now proves the same thing. A removed
 assertion with no replacement is a finding, and so is a replacement that cannot fail where
-the removed one would: `toContain((string) $x)` passes when `$x` is null. Porting a test to a
-new interface changes how it reaches its subject, not what it checks.
+the removed one would: `toContain((string) $x)` passes when `$x` is null. So is an expected
+value read off the subject under test: once `file === encode($fixture)` is asserted,
+`read($path)->scenario` toBe `$fixture->scenario` compares the fixture with itself. Expect the
+literal the test set up. Porting a test to a new interface changes how it reaches its subject,
+not what it checks.
