@@ -29,15 +29,21 @@ final readonly class ApiExchange
         public array $responseBody,
     ) {}
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
+    /**
+     * A missing key takes the format's default: method GET, status 200, empty
+     * bodies. A key with the wrong type is refused.
+     */
+    public static function fromDecoded(DecodedObject $exchange): self
     {
+        $match = $exchange->nested('match');
+        $response = $exchange->nested('response');
+
         return new self(
-            method: strtoupper((string) ($data['match']['method'] ?? 'GET')),
-            path: (string) ($data['match']['path'] ?? ''),
-            matchBody: (array) ($data['match']['body'] ?? []),
-            responseStatus: (int) ($data['response']['status'] ?? 200),
-            responseBody: (array) ($data['response']['body'] ?? []),
+            method: strtoupper($match->string('method', 'GET')),
+            path: $match->string('path', ''),
+            matchBody: $match->object('body'),
+            responseStatus: $response->int('status', 200),
+            responseBody: $response->object('body'),
         );
     }
 

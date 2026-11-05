@@ -394,7 +394,8 @@ construction. Field-level redaction runs on write against an allowlist that
 fails closed, and loading a fixture refuses one whose events or recorded API
 responses carry a field the allowlist does not permit, whose API exchanges
 match on a request parameter it does not permit, or that is missing an event
-its manifest requires.
+its manifest requires. A field of the wrong type, such as a status of `"200"`
+or an event with no string `type`, is refused too, rather than cast.
 
 `cancel-at-period-end-then-canceled-early` is the exception: it is hand-authored
 from Stripe's documented subscription object rather than recorded, because it

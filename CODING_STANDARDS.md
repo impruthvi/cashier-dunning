@@ -21,6 +21,10 @@ for that reason: the expected message names what was refused (the field, the eve
 token), not text other refusals share, such as `Step 0`. A refusal claim with no test behind
 it, or only a test that any refusal would pass, is a finding.
 
+## Static analysis
+
+The PHPStan baseline stays empty: fix an error by narrowing the type where the value enters, such as a fixture's decoded JSON, never by a baseline entry, an ignore or a cast (#65).
+
 ## Paths
 
 A path the code under test produces is compared against `nativePath()` from `tests/Pest.php`,

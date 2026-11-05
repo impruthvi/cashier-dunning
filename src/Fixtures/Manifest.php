@@ -33,12 +33,11 @@ final readonly class Manifest
         public array $optional = [],
     ) {}
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
+    public static function fromDecoded(DecodedObject $manifest): self
     {
         return new self(
-            required: array_values(array_map(strval(...), (array) ($data['required_events'] ?? []))),
-            optional: array_values(array_map(strval(...), (array) ($data['optional_events'] ?? []))),
+            required: $manifest->strings('required_events'),
+            optional: $manifest->strings('optional_events'),
         );
     }
 

@@ -23,24 +23,4 @@ final readonly class ScenarioStep
     {
         return new self(Duration::parse($advanceTo), $label, $action ?? Action::wait());
     }
-
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
-    {
-        return new self(
-            advanceTo: Duration::parse((string) ($data['advance_to'] ?? '0d')),
-            label: (string) ($data['label'] ?? ''),
-            action: Action::fromArray((array) ($data['action'] ?? [])),
-        );
-    }
-
-    /** @return array<string, mixed> */
-    public function toArray(): array
-    {
-        return [
-            'advance_to' => $this->advanceTo->toString(),
-            'label' => $this->label,
-            'action' => $this->action->toArray(),
-        ];
-    }
 }

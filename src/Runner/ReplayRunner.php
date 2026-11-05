@@ -15,6 +15,7 @@ use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Replay\WebhookSigner;
 use Impruthvi\CashierDunning\Simulation\SimulationContext;
 use Impruthvi\CashierDunning\Simulation\SimulationEnvironment;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 use Throwable;
 
 /**
@@ -138,8 +139,8 @@ final readonly class ReplayRunner
                 $assertions++;
 
                 $events[] = new EventResult(
-                    id: (string) ($payload['id'] ?? 'unknown'),
-                    type: (string) ($payload['type'] ?? 'unknown'),
+                    id: WebhookEvent::id($payload) ?? 'unknown',
+                    type: WebhookEvent::type($payload) ?? 'unknown',
                     status: $status,
                     changes: $timeline->observe($payload),
                     failure: $status >= 300
@@ -148,8 +149,8 @@ final readonly class ReplayRunner
                 );
             } catch (Throwable $e) {
                 $events[] = new EventResult(
-                    id: (string) ($payload['id'] ?? 'unknown'),
-                    type: (string) ($payload['type'] ?? 'unknown'),
+                    id: WebhookEvent::id($payload) ?? 'unknown',
+                    type: WebhookEvent::type($payload) ?? 'unknown',
                     status: 0,
                     changes: [],
                     failure: $e->getMessage(),

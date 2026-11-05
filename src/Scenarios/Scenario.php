@@ -28,34 +28,6 @@ final readonly class Scenario
         public Manifest $manifest,
     ) {}
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
-    {
-        return new self(
-            name: (string) ($data['name'] ?? ''),
-            description: (string) ($data['description'] ?? ''),
-            steps: array_map(
-                ScenarioStep::fromArray(...),
-                array_values((array) ($data['steps'] ?? []))
-            ),
-            manifest: Manifest::fromArray((array) ($data['manifest'] ?? [])),
-        );
-    }
-
-    /** @return array<string, mixed> */
-    public function toArray(): array
-    {
-        return [
-            'name' => $this->name,
-            'description' => $this->description,
-            'manifest' => $this->manifest->toArray(),
-            'steps' => array_map(
-                static fn (ScenarioStep $step): array => $step->toArray(),
-                $this->steps
-            ),
-        ];
-    }
-
     /**
      * How far the test clock has to travel in total.
      *

@@ -66,24 +66,6 @@ final readonly class Action
         return new self(ActionType::Cancel, ['immediately' => $immediately]);
     }
 
-    /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
-    {
-        /** @var array<string, scalar|null> $parameters */
-        $parameters = (array) ($data['parameters'] ?? []);
-
-        return new self(
-            type: ActionType::from((string) ($data['type'] ?? 'wait')),
-            parameters: $parameters,
-        );
-    }
-
-    /** @return array<string, mixed> */
-    public function toArray(): array
-    {
-        return ['type' => $this->type->value, 'parameters' => $this->parameters];
-    }
-
     public function describe(): string
     {
         return match ($this->type) {

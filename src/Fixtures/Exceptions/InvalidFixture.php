@@ -11,6 +11,11 @@ class InvalidFixture extends RuntimeException
         return new self("Fixture is missing required key [{$key}].");
     }
 
+    public static function malformed(string $reason): self
+    {
+        return new self("Fixture is invalid: {$reason}");
+    }
+
     public static function unknownProvider(string $provider): self
     {
         return new self(

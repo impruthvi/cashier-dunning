@@ -8,6 +8,7 @@ use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 use RuntimeException;
 use Stripe\Exception\RateLimitException;
 use Throwable;
@@ -243,7 +244,7 @@ final class RecordingRefused extends RuntimeException
         }
 
         $types = array_values(array_unique(array_map(
-            static fn (array $event): string => (string) ($event['type'] ?? 'unknown'),
+            static fn (array $event): string => WebhookEvent::type($event) ?? 'unknown',
             $this->captured
         )));
 
