@@ -39,3 +39,7 @@ _Avoid_: Redaction list, denylist
 **Manifest**:
 The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when loaded.
 _Avoid_: Expected events, checklist
+
+**Quarantine**:
+What a refused recording leaves behind: the events Stripe sent before it was refused, and why it was refused. A recording is refused when it is incomplete, cannot be written as a fixture, or does not replay clean. A quarantine is kept where it can never be loaded as a fixture.
+_Avoid_: Failed fixture, draft, partial recording

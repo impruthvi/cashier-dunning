@@ -2,7 +2,6 @@
 
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
-use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -32,20 +31,16 @@ function recordAndWrite(string $scenarioName): Fixture
 {
     $scenario = (new ScenarioRepository)->find($scenarioName);
 
-    ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
+    ['fixture' => $fixture, 'path' => $path] = (new RecordAndVerify(
         new Recorder(
             stripe: Cashier::stripe(),
-            quarantineDirectory: dirname(__DIR__, 2).'/fixtures/quarantine',
             eventTimeoutSeconds: (int) (env('CASHIER_DUNNING_EVENT_TIMEOUT') ?? 25),
         ),
         app(ReplayRunner::class),
+        dirname(__DIR__, 2).'/fixtures',
     ))->record($scenario);
 
-    expect($fixture->satisfiesManifest())->toBeTrue()
-        ->and($report->passed())->toBeTrue();
-
-    $path = dirname(__DIR__, 2).'/fixtures/stripe/'.$fixture->scenario.'.json';
-    FixtureFile::write($fixture, $path);
+    expect($fixture->satisfiesManifest())->toBeTrue();
 
     fwrite(STDERR, "\n---RECORDED--- {$path}\n");
     foreach ($fixture->steps as $step) {

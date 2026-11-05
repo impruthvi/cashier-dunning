@@ -10,7 +10,7 @@ use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\Normalizer;
 use Impruthvi\CashierDunning\Fixtures\Provider;
 use Impruthvi\CashierDunning\Fixtures\Step;
-use Impruthvi\CashierDunning\Record\Exceptions\IncompleteRecording;
+use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Scenarios\ActionType;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
@@ -26,7 +26,7 @@ use Throwable;
  * Create a test clock, put a customer on it, subscribe with a card that will
  * fail, then walk the scenario: advance the clock to each offset, wait for
  * Stripe to finish reacting, and collect what it emitted. At the end, check the
- * manifest — and only then write a file.
+ * manifest, and only then build a fixture.
  *
  * The order matters. A recording is checked for completeness *before* it becomes
  * a fixture, because a short recording is wrong in a way nothing downstream can
@@ -36,39 +36,32 @@ use Throwable;
  * Everything captured is normalised and passed through the allowlist on the way
  * out. Fixtures are published, so redaction happens at the point of writing, not
  * as a later review step somebody can forget.
+ *
+ * Talks to Stripe and nothing else. Whether a recording is verified, written or
+ * quarantined is RecordAndVerify's decision, and it is the only caller.
+ *
+ * @internal
  */
-final class Recorder
+final readonly class Recorder
 {
-    /** @var list<array<string, mixed>> */
-    private array $captured = [];
-
-    /** @var list<string> */
-    private array $requestIds = [];
-
-    /** @var array<string, true> event types the scenario never asked about */
-    private array $undeclared = [];
-
     public function __construct(
-        private readonly StripeClient $stripe,
-        private readonly ?string $quarantineDirectory = null,
-        private readonly int $eventTimeoutSeconds = 30,
-        private readonly int $clockTimeoutSeconds = 120,
+        private StripeClient $stripe,
+        private int $eventTimeoutSeconds = 30,
+        private int $clockTimeoutSeconds = 120,
     ) {}
 
     /**
-     * @throws IncompleteRecording when the scenario's manifest is not satisfied
-     * @throws InvalidFixture when what was captured cannot be written as a fixture
+     * @throws RecordingRefused when the recording is incomplete or cannot be
+     *                          written as a fixture. It carries what was
+     *                          captured, so the caller can quarantine it.
      */
-    public function record(Scenario $scenario, ?CarbonImmutable $startsAt = null): Fixture
+    public function record(Scenario $scenario, CarbonImmutable $startsAt): Fixture
     {
-        // A round number in the recent past. Stripe rejects a clock frozen in
-        // the future, and a scenario that starts mid-hour makes every recorded
-        // offset harder to read than it needs to be.
-        $startsAt ??= CarbonImmutable::now('UTC')->subDay()->startOfHour();
-
         $clock = TestClock::create($this->stripe, $startsAt, $this->clockTimeoutSeconds);
         $poller = new EventPoller($this->stripe, $startsAt->getTimestamp());
 
+        // Built afresh for every recording, so nothing one recording captured
+        // can satisfy the manifest of the next.
         $state = new RecordingState;
         $steps = [];
 
@@ -84,25 +77,24 @@ final class Recorder
                 $steps[] = $this->recordStep($scenario, $step, $index, $clock, $poller, $state, $normalizer);
             }
         } catch (RateLimitException $e) {
-            throw $this->quarantine($scenario, $startsAt, 'rate limited: '.$e->getMessage(), $e);
+            throw RecordingRefused::rateLimited($scenario->name, $state->captured, $startsAt, $e);
         } catch (ClockAdvanceFailed $e) {
-            throw $this->quarantine($scenario, $startsAt, $e->getMessage(), $e);
+            throw RecordingRefused::clockFailed($scenario->name, $state->captured, $startsAt, $e);
         } finally {
             $clock->delete();
         }
 
         $types = array_map(
             static fn (array $event): string => (string) ($event['type'] ?? ''),
-            $this->captured
+            $state->captured
         );
 
         if (! $scenario->manifest->isSatisfiedBy($types)) {
-            throw $this->quarantine(
-                $scenario,
-                $startsAt,
-                'the recording ended before every required event arrived',
-                null,
+            throw RecordingRefused::missingEvents(
+                $scenario->name,
                 $scenario->manifest->missingFrom($types),
+                $state->captured,
+                $startsAt,
             );
         }
 
@@ -110,27 +102,17 @@ final class Recorder
             return new Fixture(
                 provider: Provider::Stripe,
                 scenario: $scenario->name,
-                provenance: $this->provenance($startsAt),
+                provenance: $this->provenance($startsAt, $state),
                 manifest: $scenario->manifest,
                 steps: $steps,
             );
         } catch (InvalidFixture $e) {
             // Reachable when the allowlist keeps a string field whose recorded
             // value happens to contain {{...}}. The clock is gone by now, so
-            // the capture is quarantined like a short recording: it is the only
+            // the capture is refused like a short recording: it is the only
             // record of what Stripe sent.
-            throw InvalidFixture::unpublishableRecording(
-                $scenario->name,
-                $e,
-                $this->writeArtifact($scenario, $startsAt, $e->getMessage()),
-            );
+            throw RecordingRefused::unpublishable($scenario->name, $state->captured, $startsAt, $e);
         }
-    }
-
-    /** @return list<array<string, mixed>> */
-    public function capturedEvents(): array
-    {
-        return $this->captured;
     }
 
     private function recordStep(
@@ -153,13 +135,13 @@ final class Recorder
         // recording as a whole. Waiting for a specific event here would make a
         // scenario that is merely arranged differently look like a failure.
         $events = $poller->collect([], $this->eventTimeoutSeconds);
-        $this->captured = [...$this->captured, ...$events];
+        $state->captured = [...$state->captured, ...$events];
 
         foreach ($events as $event) {
             $type = (string) ($event['type'] ?? '');
 
             if ($type !== '' && ! $scenario->manifest->declares($type)) {
-                $this->undeclared[$type] = true;
+                $state->undeclared[$type] = true;
             }
         }
 
@@ -352,7 +334,7 @@ final class Recorder
     }
 
     /** @return array<string, mixed> */
-    private function provenance(CarbonImmutable $startsAt): array
+    private function provenance(CarbonImmutable $startsAt, RecordingState $state): array
     {
         return [
             'recorded_at' => $startsAt->toIso8601String(),
@@ -364,47 +346,7 @@ final class Recorder
             // Kept so a maintainer can see what this account emitted that the
             // scenario did not ask for. That is how a manifest learns as Stripe
             // changes, rather than by someone noticing years later.
-            'undeclared_events' => array_keys($this->undeclared),
+            'undeclared_events' => array_keys($state->undeclared),
         ];
-    }
-
-    /** @param list<string> $missing */
-    private function quarantine(
-        Scenario $scenario,
-        CarbonImmutable $startsAt,
-        string $reason,
-        ?Throwable $previous = null,
-        array $missing = [],
-    ): IncompleteRecording {
-        $path = $this->writeArtifact($scenario, $startsAt, $reason);
-
-        $types = array_map(
-            static fn (array $event): string => (string) ($event['type'] ?? ''),
-            $this->captured
-        );
-
-        return new IncompleteRecording(
-            scenario: $scenario->name,
-            missing: $missing,
-            captured: $types,
-            reason: $reason,
-            artifactPath: $path,
-        );
-    }
-
-    private function writeArtifact(Scenario $scenario, CarbonImmutable $startsAt, string $reason): ?string
-    {
-        if ($this->quarantineDirectory === null) {
-            return null;
-        }
-
-        return (new QuarantineArtifact(
-            scenario: $scenario,
-            captured: $this->captured,
-            requestIds: $this->requestIds,
-            reason: $reason,
-            startedAt: $startsAt,
-            failedAt: CarbonImmutable::now('UTC'),
-        ))->write($this->quarantineDirectory);
     }
 }

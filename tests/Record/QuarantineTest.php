@@ -3,9 +3,11 @@
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
-use Impruthvi\CashierDunning\Record\Exceptions\IncompleteRecording;
+use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
+use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Record\QuarantineArtifact;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
+use Stripe\Exception\RateLimitException;
 
 function shortRecording(): QuarantineArtifact
 {
@@ -68,12 +70,12 @@ it('writes itself where a failed recording can be found again', function () {
 });
 
 it('names the missing events in the exception a person actually reads', function () {
-    $exception = IncompleteRecording::missingEvents(
+    $exception = RecordingRefused::missingEvents(
         'trial-dunning-cancel-reactivate',
         ['invoice.payment_failed'],
-        ['customer.subscription.created'],
-        '/tmp/quarantine/x.json',
-    );
+        [['id' => 'evt_1', 'type' => 'customer.subscription.created']],
+        CarbonImmutable::parse('2026-01-01T00:00:00Z'),
+    )->quarantinedAt('/tmp/quarantine/x.json');
 
     expect($exception->getMessage())->toContain('No fixture was written')
         ->and($exception->getMessage())->toContain('Never arrived: invoice.payment_failed')
@@ -81,15 +83,41 @@ it('names the missing events in the exception a person actually reads', function
 });
 
 it('says plainly when nothing was captured at all', function () {
-    expect(IncompleteRecording::clockFailed('demo', [], 'clock stuck in advancing')->getMessage())
-        ->toContain('Nothing was captured at all.')
-        ->and(IncompleteRecording::clockFailed('demo', [], 'clock stuck in advancing')->getMessage())
-        ->toContain('the test clock did not finish advancing');
+    $exception = RecordingRefused::clockFailed(
+        'demo',
+        [],
+        CarbonImmutable::parse('2026-01-01T00:00:00Z'),
+        new ClockAdvanceFailed('clock stuck in advancing'),
+    );
+
+    expect($exception->getMessage())->toContain('Nothing was captured at all.')
+        ->and($exception->getMessage())->toContain('the test clock did not finish advancing: clock stuck in advancing');
 });
 
 it('reports a rate limit as its own reason rather than a generic failure', function () {
     // Stripe allows twenty invoices per subscription per day. Knowing that is
     // what tells you to wait rather than to debug.
-    expect(IncompleteRecording::rateLimited('demo', ['a'], '20 invoices per day reached')->getMessage())
-        ->toContain('Stripe rate limited the recording: 20 invoices per day reached');
+    $exception = RecordingRefused::rateLimited(
+        'demo',
+        [['id' => 'evt_1', 'type' => 'a']],
+        CarbonImmutable::parse('2026-01-01T00:00:00Z'),
+        RateLimitException::factory('20 invoices per day reached'),
+    );
+
+    expect($exception->getMessage())->toContain('Stripe rate limited the recording: 20 invoices per day reached');
+});
+
+it('keeps the cause and what was captured once it says where the quarantine went', function () {
+    $cause = new ClockAdvanceFailed('clock stuck in advancing');
+
+    $exception = RecordingRefused::clockFailed(
+        'demo',
+        [['id' => 'evt_1', 'type' => 'customer.subscription.created']],
+        CarbonImmutable::parse('2026-01-01T00:00:00Z'),
+        $cause,
+    )->quarantinedAt('/tmp/quarantine/x.json');
+
+    expect($exception->getPrevious())->toBe($cause)
+        ->and($exception->captured)->toHaveCount(1)
+        ->and($exception->artifactPath)->toBe('/tmp/quarantine/x.json');
 });

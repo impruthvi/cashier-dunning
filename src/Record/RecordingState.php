@@ -3,7 +3,8 @@
 namespace Impruthvi\CashierDunning\Record;
 
 /**
- * What the recorder has created so far in the Stripe account.
+ * What one recording has created so far in the Stripe account, and what Stripe
+ * has sent back.
  *
  * Mutable and deliberately small. A scenario's later steps need the ids its
  * earlier steps produced — you cannot replace a payment method on a customer
@@ -15,4 +16,10 @@ final class RecordingState
     public ?string $customerId = null;
 
     public ?string $subscriptionId = null;
+
+    /** @var list<array<string, mixed>> every event Stripe emitted, as it arrived */
+    public array $captured = [];
+
+    /** @var array<string, true> event types the scenario never asked about */
+    public array $undeclared = [];
 }

@@ -9,11 +9,10 @@ use Impruthvi\CashierDunning\Commands\Concerns\LocatesFixtures;
 use Impruthvi\CashierDunning\Commands\Concerns\WritesToConsole;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
-use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Guards\Exceptions\UnsafeKey;
 use Impruthvi\CashierDunning\Guards\KeyModeGuard;
-use Impruthvi\CashierDunning\Record\Exceptions\IncompleteRecording;
+use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Record\RecordAndVerify;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Impruthvi\CashierDunning\Reporting\JsonReport;
@@ -133,53 +132,28 @@ class SimulateCommand extends Command
         $this->write('');
 
         try {
-            ['fixture' => $fixture, 'report' => $report] = (new RecordAndVerify(
+            ['fixture' => $fixture, 'path' => $path] = (new RecordAndVerify(
                 // Resolved rather than built, so a test can shorten the
                 // recorder's timeouts without a Stripe account.
-                $this->laravel->make(Recorder::class, [
-                    'stripe' => Cashier::stripe(),
-                    'quarantineDirectory' => $this->quarantineDirectory(),
-                ]),
+                $this->laravel->make(Recorder::class, ['stripe' => Cashier::stripe()]),
                 $this->runner(),
+                $this->applicationFixturePath(),
             ))->record($scenario);
-        } catch (IncompleteRecording|InvalidFixture $e) {
+        } catch (RecordingRefused $e) {
             $this->components->error($e->getMessage());
 
-            return self::FAILURE;
-        } catch (SimulationFailed $e) {
-            $this->components->error($e->getMessage());
+            if ($e->report !== null) {
+                (new TimelineRenderer($this->display()))->render($e->report);
+            }
 
             return self::FAILURE;
         }
-
-        // A recording that cannot be replayed is worse than no recording: it
-        // looks like coverage. Nothing reaches disk until it has worked once.
-        if (! $report->passed()) {
-            $this->components->error('The recording could not be replayed, so it was not written.');
-            (new TimelineRenderer($this->display()))->render($report);
-
-            return self::FAILURE;
-        }
-
-        $path = $this->fixtureDestination($fixture->scenario);
-
-        FixtureFile::write($fixture, $path);
 
         $this->write("  Wrote <options=bold>{$path}</>");
         $this->write('  '.count($fixture->eventTypes()).' event(s) across '.count($fixture->steps).' step(s), replayed clean.');
         $this->write('');
 
         return self::SUCCESS;
-    }
-
-    private function fixtureDestination(string $scenario): string
-    {
-        return $this->applicationFixturePath().DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.$scenario.'.json';
-    }
-
-    private function quarantineDirectory(): string
-    {
-        return $this->applicationFixturePath().DIRECTORY_SEPARATOR.'quarantine';
     }
 
     private function listScenarios(FixtureRepository $repository): int

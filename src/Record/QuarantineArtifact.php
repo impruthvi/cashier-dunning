@@ -3,6 +3,9 @@
 namespace Impruthvi\CashierDunning\Record;
 
 use Carbon\CarbonImmutable;
+use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Reporting\JsonReport;
+use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 
 /**
@@ -17,6 +20,11 @@ use Impruthvi\CashierDunning\Scenarios\Scenario;
  * "that didn't work, try again" costs them twenty invoices of quota and tells
  * them nothing about why. The artifact holds what did arrive, what didn't, when
  * each event landed, and the request ids Stripe support will ask for.
+ *
+ * A recording that was complete but did not replay clean also keeps the replay
+ * and the fixture it would have written, because there the diagnosis lives in
+ * the replay. The fixture is nested, so the artifact still has no top-level
+ * `format_version` and still cannot be loaded.
  */
 final readonly class QuarantineArtifact
 {
@@ -31,6 +39,8 @@ final readonly class QuarantineArtifact
         public string $reason,
         public CarbonImmutable $startedAt,
         public CarbonImmutable $failedAt,
+        public ?ReplayReport $replay = null,
+        public ?Fixture $fixture = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -41,7 +51,7 @@ final readonly class QuarantineArtifact
             $this->captured
         );
 
-        return [
+        $artifact = [
             'quarantined' => true,
             'scenario' => $this->scenario->name,
             'reason' => $this->reason,
@@ -63,6 +73,16 @@ final readonly class QuarantineArtifact
             ),
             'request_ids' => $this->requestIds,
         ];
+
+        if ($this->replay !== null) {
+            $artifact['replay'] = JsonReport::toArray($this->replay);
+        }
+
+        if ($this->fixture !== null) {
+            $artifact['fixture'] = $this->fixture->toArray();
+        }
+
+        return $artifact;
     }
 
     public function encode(): string
