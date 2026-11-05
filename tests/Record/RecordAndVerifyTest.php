@@ -78,11 +78,15 @@ function noFixtureIn(string $root): void
     expect(glob($root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'*.json') ?: [])->toBe([]);
 }
 
-/** The file at $path is exactly $fixture, and loads back as its scenario. */
+/**
+ * The file at $path is exactly $fixture, and loads back as the scenario
+ * twoStepScenario() records. The literal is the point: comparing against
+ * $fixture->scenario would only check the encoding against itself.
+ */
 function expectSavedFixture(string $path, Fixture $fixture): void
 {
     expect(file_get_contents($path))->toBe(FixtureFile::encode($fixture))
-        ->and(FixtureFile::read($path)->scenario)->toBe($fixture->scenario);
+        ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario');
 }
 
 it('writes a recording that replays clean, with the entitlements the application granted', function () {
