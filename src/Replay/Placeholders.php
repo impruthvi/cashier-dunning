@@ -41,6 +41,19 @@ final readonly class Placeholders
     }
 
     /**
+     * As resolve(), for an object such as an event payload. Keys are never
+     * placeholders, so the keys come back unchanged. Values can change type,
+     * because a whole-string timestamp like `{{t+14d}}` resolves to an integer.
+     *
+     * @param  array<string, mixed>  $object
+     * @return array<string, mixed>
+     */
+    public function resolveObject(array $object): array
+    {
+        return array_map($this->resolve(...), $object);
+    }
+
+    /**
      * A whole-string placeholder resolves to its natural type — a timestamp
      * becomes an integer, because that is what Stripe sends and what Cashier
      * will try to do date arithmetic on. Placeholders embedded in a longer

@@ -250,3 +250,151 @@ it('marks single-event steps as not shuffleable', function () {
 it('exposes format version as a constant so the loader can gate on it', function () {
     expect(Fixture::FORMAT_VERSION)->toBe(1);
 });
+
+/** @param array<string, mixed> $exchange */
+function fixtureWithExchange(array $exchange): string
+{
+    return json_encode(minimalFixtureArray([
+        'steps' => [[
+            'advance_to' => '0d',
+            'label' => 'start',
+            'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
+            'api_responses' => [$exchange],
+        ]],
+    ]));
+}
+
+it('refuses an API exchange field with the wrong type rather than coercing it', function (array $exchange, string $message) {
+    // A cast would replay "abc" as status 0 and "x" as the match body ["x"].
+    // Refused instead, naming the step, the exchange and the key.
+    expect(fn () => FixtureFile::decode(fixtureWithExchange($exchange)))
+        ->toThrow(InvalidFixture::class, $message);
+})->with([
+    'status that is not a number' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => ['status' => 'abc']],
+        'Step 0 is invalid: [api_responses[0].response.status] must be an integer',
+    ],
+    'status that is a numeric string' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => ['status' => '200']],
+        'Step 0 is invalid: [api_responses[0].response.status] must be an integer',
+    ],
+    'method that is a list' => [
+        ['match' => ['method' => ['GET'], 'path' => '/v1/subscriptions/{{sub_1}}']],
+        'Step 0 is invalid: [api_responses[0].match.method] must be a string',
+    ],
+    'path that is a number' => [
+        ['match' => ['method' => 'GET', 'path' => 5]],
+        'Step 0 is invalid: [api_responses[0].match.path] must be a string',
+    ],
+    'match body that is a string' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => 'x']],
+        'Step 0 is invalid: [api_responses[0].match.body] must be an object',
+    ],
+    'match body that is a list' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}', 'body' => ['x']]],
+        'Step 0 is invalid: [api_responses[0].match.body] must be an object',
+    ],
+    'response body that is a list' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => ['body' => ['x']]],
+        'Step 0 is invalid: [api_responses[0].response.body] must be an object',
+    ],
+    'match that is a string' => [
+        ['match' => 'GET /v1/subscriptions'],
+        'Step 0 is invalid: [api_responses[0].match] must be an object',
+    ],
+    'response that is a number' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => 200],
+        'Step 0 is invalid: [api_responses[0].response] must be an object',
+    ],
+    'status that is null' => [
+        ['match' => ['method' => 'GET', 'path' => '/v1/subscriptions/{{sub_1}}'], 'response' => ['status' => null]],
+        'Step 0 is invalid: [api_responses[0].response.status] must be an integer',
+    ],
+]);
+
+it('defaults an API exchange key that is absent', function () {
+    $exchange = FixtureFile::decode(fixtureWithExchange([
+        'match' => ['path' => '/v1/subscriptions/{{sub_1}}'],
+    ]))->steps[0]->apiExchanges[0];
+
+    expect($exchange->method)->toBe('GET')
+        ->and($exchange->responseStatus)->toBe(200)
+        ->and($exchange->matchBody)->toBe([])
+        ->and($exchange->responseBody)->toBe([]);
+});
+
+it('refuses a step field with the wrong type rather than coercing it', function (array $step, string $message) {
+    $valid = [
+        'advance_to' => '0d',
+        'label' => 'start',
+        'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
+    ];
+
+    expect(fn () => FixtureFile::decode(json_encode(minimalFixtureArray(['steps' => [array_replace($valid, $step)]]))))
+        ->toThrow(InvalidFixture::class, $message);
+})->with([
+    'advance_to that is a number' => [['advance_to' => 21], 'Step 0 is invalid: [advance_to] must be a string'],
+    'label that is a list' => [['label' => ['start']], 'Step 0 is invalid: [label] must be a string'],
+    'events that is an object' => [['events' => ['first' => ['id' => '{{evt_1}}', 'type' => 'x']]], 'Step 0 is invalid: [events] must be a list'],
+    'event that is a string' => [['events' => ['customer.subscription.created']], 'Step 0 is invalid: [events[0]] must be an object'],
+    'event with no type' => [['events' => [['id' => '{{evt_1}}']]], 'Step 0 is invalid: missing key [events[0].type]'],
+    'event whose type is not a string' => [['events' => [['id' => '{{evt_1}}', 'type' => 7]]], 'Step 0 is invalid: [events[0].type] must be a string'],
+    'event with no id' => [['events' => [['type' => 'customer.subscription.created']]], 'Step 0 is invalid: missing key [events[0].id]'],
+    'event whose id is not a string' => [['events' => [['id' => 1, 'type' => 'customer.subscription.created']]], 'Step 0 is invalid: [events[0].id] must be a string'],
+    'api_responses that is an object' => [['api_responses' => ['match' => []]], 'Step 0 is invalid: [api_responses] must be a list'],
+    'api exchange that is a string' => [['api_responses' => ['GET /v1/subscriptions']], 'Step 0 is invalid: [api_responses[0]] must be an object'],
+    'entitlements that is a list' => [['entitlements' => ['teams']], 'Step 0 is invalid: [entitlements] must be an object'],
+    'entitlement that is not a scalar' => [['entitlements' => ['teams' => ['on' => true]]], 'Step 0 is invalid: [entitlements.teams] must be a scalar or null'],
+]);
+
+it('loads a step whose entitlements hold scalars and null', function () {
+    $step = FixtureFile::decode(json_encode(minimalFixtureArray(['steps' => [[
+        'advance_to' => '0d',
+        'label' => 'start',
+        'events' => [['id' => '{{evt_1}}', 'type' => 'customer.subscription.created']],
+        'entitlements' => ['teams' => true, 'projects' => 10, 'plan' => 'pro', 'seats' => null],
+    ]]])))->steps[0];
+
+    expect($step->entitlements)->toBe(['teams' => true, 'projects' => 10, 'plan' => 'pro', 'seats' => null]);
+});
+
+it('refuses a manifest field with the wrong type rather than coercing it', function (mixed $manifest, string $message) {
+    expect(fn () => FixtureFile::decode(json_encode(minimalFixtureArray(['manifest' => $manifest]))))
+        ->toThrow(InvalidFixture::class, $message);
+})->with([
+    'manifest that is a list' => [['invoice.payment_failed'], 'Fixture is invalid: [manifest] must be an object'],
+    'required events that is a string' => [['required_events' => 'invoice.payment_failed'], 'Fixture is invalid: [manifest.required_events] must be a list'],
+    'required event that is not a string' => [['required_events' => [['type' => 'invoice.payment_failed']]], 'Fixture is invalid: [manifest.required_events] must be a list of strings'],
+    'optional event that is not a string' => [['optional_events' => [7]], 'Fixture is invalid: [manifest.optional_events] must be a list of strings'],
+]);
+
+it('refuses a top-level fixture field with the wrong type rather than coercing it', function (array $overrides, string $message) {
+    expect(fn () => FixtureFile::decode(json_encode(minimalFixtureArray($overrides))))
+        ->toThrow(InvalidFixture::class, $message);
+})->with([
+    'format version that is a numeric string' => [['format_version' => '1'], 'Fixture is invalid: [format_version] must be an integer'],
+    'scenario that is a number' => [['scenario' => 7], 'Fixture is invalid: [scenario] must be a string'],
+    'steps that is an object' => [['steps' => ['first' => ['advance_to' => '0d']]], 'Fixture is invalid: [steps] must be a list'],
+    'step that is a string' => [['steps' => ['0d']], 'Fixture is invalid: [steps[0]] must be an object'],
+    'provenance that is a list' => [['provenance' => ['synthetic']], 'Fixture is invalid: [provenance] must be an object'],
+    'provider that is a number' => [['provider' => 5], 'Fixture is invalid: [provider] must be a string'],
+]);
+
+it('refuses a fixture that decodes to a list rather than an object', function () {
+    FixtureFile::decode('[{"format_version": 1}]');
+})->throws(InvalidFixture::class, 'Fixture must decode to an object.');
+
+it('defaults the provenance and manifest of a fixture that has neither', function () {
+    $data = minimalFixtureArray();
+    unset($data['provenance'], $data['manifest']);
+
+    $fixture = FixtureFile::decode(json_encode($data));
+
+    expect($fixture->provenance)->toBe([])
+        ->and($fixture->manifest->required)->toBe([])
+        ->and($fixture->manifest->optional)->toBe([]);
+});
+
+it('defaults the entitlements of a step that has none', function () {
+    expect(FixtureFile::decode(json_encode(minimalFixtureArray()))->steps[0]->entitlements)->toBe([]);
+});

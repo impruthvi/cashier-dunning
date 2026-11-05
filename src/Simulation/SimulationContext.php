@@ -47,7 +47,7 @@ final class SimulationContext
      */
     public function resolvePlaceholders(array $payload): array
     {
-        return $this->placeholders->resolve($payload);
+        return $this->placeholders->resolveObject($payload);
     }
 
     /**

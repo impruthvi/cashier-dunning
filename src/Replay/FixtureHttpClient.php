@@ -128,8 +128,8 @@ final class FixtureHttpClient implements ClientInterface
         return match (true) {
             is_bool($value) => $value ? 'true' : 'false',
             $value === null => '',
-            is_array($value) => (string) json_encode($value),
-            default => (string) $value,
+            is_int($value), is_float($value), is_string($value) => (string) $value,
+            default => json_encode($value, JSON_THROW_ON_ERROR),
         };
     }
 

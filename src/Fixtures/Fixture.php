@@ -62,31 +62,30 @@ final readonly class Fixture
             }
         }
 
-        $version = (int) $data['format_version'];
+        $fixture = DecodedObject::of($data, InvalidFixture::malformed(...));
+        $version = $fixture->int('format_version');
 
         if ($version !== self::FORMAT_VERSION) {
             throw InvalidFixture::unsupportedFormatVersion($version, self::FORMAT_VERSION);
         }
 
-        $scenario = (string) $data['scenario'];
-        $rawSteps = (array) $data['steps'];
+        $scenario = $fixture->string('scenario');
+        $steps = $fixture->objects('steps');
 
-        if ($rawSteps === []) {
+        if ($steps === []) {
             throw InvalidFixture::empty($scenario);
         }
 
-        $steps = [];
-
-        foreach (array_values($rawSteps) as $index => $step) {
-            $steps[] = Step::fromArray((array) $step, $index);
-        }
-
         return new self(
-            provider: Provider::fromFixture($data['provider']),
+            provider: Provider::fromFixture($fixture->string('provider')),
             scenario: $scenario,
-            provenance: (array) ($data['provenance'] ?? []),
-            manifest: Manifest::fromArray((array) ($data['manifest'] ?? [])),
-            steps: $steps,
+            provenance: $fixture->object('provenance'),
+            manifest: Manifest::fromDecoded($fixture->nested('manifest')),
+            steps: array_map(
+                static fn (DecodedObject $step, int $index): Step => Step::fromArray($step->data, $index),
+                $steps,
+                array_keys($steps),
+            ),
             formatVersion: $version,
         );
     }

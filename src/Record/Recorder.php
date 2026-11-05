@@ -14,6 +14,7 @@ use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Scenarios\ActionType;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 use Laravel\Cashier\Cashier;
 use Stripe\Exception\RateLimitException;
 use Stripe\Stripe;
@@ -116,7 +117,7 @@ final readonly class Recorder
         }
 
         $types = array_map(
-            static fn (array $event): string => (string) ($event['type'] ?? ''),
+            static fn (array $event): string => WebhookEvent::type($event) ?? '',
             $state->captured
         );
 
@@ -171,7 +172,7 @@ final readonly class Recorder
         $state->captured = [...$state->captured, ...$events];
 
         foreach ($events as $event) {
-            $type = (string) ($event['type'] ?? '');
+            $type = WebhookEvent::type($event) ?? '';
 
             if ($type !== '' && ! $scenario->manifest->declares($type)) {
                 $state->undeclared[$type] = true;
@@ -183,7 +184,7 @@ final readonly class Recorder
         $recorded = [];
 
         foreach ($events as $event) {
-            if (! $scenario->manifest->declares((string) ($event['type'] ?? ''))) {
+            if (! $scenario->manifest->declares(WebhookEvent::type($event) ?? '')) {
                 continue;
             }
 

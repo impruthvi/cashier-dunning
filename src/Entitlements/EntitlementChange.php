@@ -2,6 +2,8 @@
 
 namespace Impruthvi\CashierDunning\Entitlements;
 
+use Impruthvi\CashierDunning\Support\WebhookEvent;
+
 /**
  * One feature's value changing, optionally attributed to the event that caused
  * it.
@@ -31,8 +33,8 @@ final readonly class EntitlementChange
             $this->feature,
             $this->from,
             $this->to,
-            isset($event['type']) ? (string) $event['type'] : null,
-            isset($event['id']) ? (string) $event['id'] : null,
+            WebhookEvent::type($event),
+            WebhookEvent::id($event),
         );
     }
 

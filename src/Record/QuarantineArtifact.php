@@ -8,6 +8,7 @@ use Impruthvi\CashierDunning\Reporting\JsonReport;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Support\AtomicFile;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 
 /**
  * What a failed recording leaves behind, when the quarantine itself can be written.
@@ -49,7 +50,7 @@ final readonly class QuarantineArtifact
     public function toArray(): array
     {
         $types = array_map(
-            static fn (array $event): string => (string) ($event['type'] ?? 'unknown'),
+            static fn (array $event): string => WebhookEvent::type($event) ?? 'unknown',
             $this->captured
         );
 

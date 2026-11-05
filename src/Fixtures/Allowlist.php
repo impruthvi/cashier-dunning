@@ -2,6 +2,8 @@
 
 namespace Impruthvi\CashierDunning\Fixtures;
 
+use Impruthvi\CashierDunning\Support\WebhookEvent;
+
 /**
  * Decides which fields may appear in a published fixture.
  *
@@ -158,7 +160,7 @@ final class Allowlist
      */
     public function apply(array $event): array
     {
-        $permitted = $this->permittedFor((string) ($event['type'] ?? ''));
+        $permitted = $this->permittedFor(WebhookEvent::type($event) ?? '');
 
         return $this->filter($event, $permitted);
     }
@@ -180,10 +182,7 @@ final class Allowlist
     {
         $filtered = $this->filter(['data' => ['object' => $object]], $this->permittedForObject($object));
 
-        /** @var array<string, mixed> $result */
-        $result = ($filtered['data'] ?? [])['object'] ?? [];
-
-        return $result;
+        return WebhookEvent::object($filtered);
     }
 
     /**
@@ -219,7 +218,7 @@ final class Allowlist
      */
     public function disallowedPaths(array $event, ?array $permitted = null): array
     {
-        $permitted ??= $this->permittedFor((string) ($event['type'] ?? ''));
+        $permitted ??= $this->permittedFor(WebhookEvent::type($event) ?? '');
 
         return $this->collect($event, $permitted);
     }

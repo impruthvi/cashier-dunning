@@ -64,3 +64,15 @@ it('gives the same value for the same placeholder every time', function () use (
     expect($placeholders->resolveString('{{sub_1}}'))
         ->toBe($placeholders->resolveString('{{sub_1}}'));
 });
+
+it('resolves an event payload keeping its keys, letting a timestamp become an integer', function () use ($start) {
+    expect((new Placeholders($start))->resolveObject([
+        'id' => '{{evt_1}}',
+        'created' => '{{t+0d}}',
+        'livemode' => false,
+    ]))->toBe([
+        'id' => 'evt_replay1',
+        'created' => 1767225600,
+        'livemode' => false,
+    ]);
+});

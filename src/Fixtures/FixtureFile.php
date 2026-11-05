@@ -5,6 +5,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Support\AtomicFile;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 use JsonException;
 
 /**
@@ -35,8 +36,11 @@ final class FixtureFile
      * rules: replay, doctor, and anything else that reads a file. A fixture is
      * refused when an event or a recorded API response carries a field the
      * allowlist does not permit, when an API exchange matches on a request
-     * parameter it does not permit, or when a required event in its manifest
-     * never arrived.
+     * parameter it does not permit, when a required event in its manifest
+     * never arrived, or when a field has the wrong type: a status of `"200"`, a
+     * match body that is a list, an event without a string `type` and `id`.
+     * Those are refused rather than cast, because a cast replays something the
+     * author never wrote.
      *
      * @throws InvalidFixture
      */
@@ -48,7 +52,7 @@ final class FixtureFile
             throw new InvalidFixture('Fixture is not valid JSON: '.$e->getMessage(), previous: $e);
         }
 
-        if (! is_array($data)) {
+        if (! DecodedObject::isObject($data)) {
             throw new InvalidFixture('Fixture must decode to an object.');
         }
 
@@ -64,7 +68,7 @@ final class FixtureFile
                 $offending = $allowlist->disallowedPaths($event);
 
                 if ($offending !== []) {
-                    throw DisallowedField::inStepEvent($index, (string) ($event['type'] ?? ''), $offending);
+                    throw DisallowedField::inStepEvent($index, WebhookEvent::type($event) ?? '', $offending);
                 }
             }
 

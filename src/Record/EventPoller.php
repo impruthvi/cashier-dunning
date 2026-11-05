@@ -2,6 +2,7 @@
 
 namespace Impruthvi\CashierDunning\Record;
 
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 use Stripe\StripeClient;
 
 /**
@@ -72,7 +73,7 @@ final class EventPoller
             }
 
             $types = array_map(
-                static fn (array $event): string => (string) ($event['type'] ?? ''),
+                static fn (array $event): string => WebhookEvent::type($event) ?? '',
                 $collected
             );
 
@@ -108,7 +109,7 @@ final class EventPoller
         foreach (array_reverse($response->data) as $event) {
             /** @var array<string, mixed> $data */
             $data = $event->toArray();
-            $id = (string) ($data['id'] ?? '');
+            $id = WebhookEvent::id($data) ?? '';
 
             if ($id === '' || isset($this->seen[$id]) || ! $this->belongsToRecording($data)) {
                 continue;
@@ -133,7 +134,7 @@ final class EventPoller
             return false;
         }
 
-        $object = (array) (($event['data'] ?? [])['object'] ?? []);
+        $object = WebhookEvent::object($event);
 
         foreach (['id', 'customer', 'subscription'] as $key) {
             $value = $object[$key] ?? null;

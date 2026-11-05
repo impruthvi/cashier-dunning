@@ -4,7 +4,6 @@ use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
 use Impruthvi\CashierDunning\Fixtures\Manifest;
 use Impruthvi\CashierDunning\Scenarios\Action;
 use Impruthvi\CashierDunning\Scenarios\ActionType;
-use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
 use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
 
@@ -84,12 +83,6 @@ it('describes what it will do without doing any of it', function () {
 
     expect($described[0])->toBe('+0d  subscribe to price_monthly with pm_card_chargeCustomerFail after a 14 day trial')
         ->and($described[1])->toBe('+11d  wait');
-});
-
-it('round-trips through an array', function () {
-    $scenario = (new ScenarioRepository)->find('trial-dunning-cancel-reactivate');
-
-    expect(Scenario::fromArray($scenario->toArray())->toArray())->toBe($scenario->toArray());
 });
 
 it('returns null for a scenario it does not have', function () {

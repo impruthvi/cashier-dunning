@@ -3,6 +3,7 @@
 namespace Impruthvi\CashierDunning\Fixtures;
 
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use Impruthvi\CashierDunning\Support\WebhookEvent;
 
 /**
  * One point in a recorded billing timeline: advance the clock to here, deliver
@@ -35,20 +36,29 @@ final readonly class Step
             }
         }
 
-        if (! is_array($data['events'])) {
-            throw InvalidFixture::malformedStep($index, '[events] must be a list');
-        }
+        $step = DecodedObject::of($data, static fn (string $reason): InvalidFixture => InvalidFixture::malformedStep($index, $reason));
 
         return new self(
-            advanceTo: Duration::parse((string) $data['advance_to']),
-            label: (string) $data['label'],
-            events: array_values($data['events']),
-            apiExchanges: array_map(
-                ApiExchange::fromArray(...),
-                array_values((array) ($data['api_responses'] ?? []))
-            ),
-            entitlements: (array) ($data['entitlements'] ?? []),
+            advanceTo: Duration::parse($step->string('advance_to')),
+            label: $step->string('label'),
+            events: array_map(self::event(...), $step->objects('events')),
+            apiExchanges: array_map(ApiExchange::fromDecoded(...), $step->objects('api_responses')),
+            entitlements: $step->scalars('entitlements'),
         );
+    }
+
+    /**
+     * Everything downstream reads an event's type and id, so an event without
+     * both as strings is refused here rather than replayed as `unknown`.
+     *
+     * @return array<string, mixed>
+     */
+    private static function event(DecodedObject $event): array
+    {
+        $event->string('type');
+        $event->string('id');
+
+        return $event->data;
     }
 
     /**
@@ -107,7 +117,7 @@ final readonly class Step
     public function eventTypes(): array
     {
         return array_map(
-            static fn (array $event): string => (string) ($event['type'] ?? 'unknown'),
+            static fn (array $event): string => WebhookEvent::type($event) ?? 'unknown',
             $this->events
         );
     }
