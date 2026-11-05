@@ -78,11 +78,11 @@ function noFixtureIn(string $root): void
     expect(glob($root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'*.json') ?: [])->toBe([]);
 }
 
-/** The file at $path is exactly $fixture, and loads back as the scenario recorded. */
+/** The file at $path is exactly $fixture, and loads back as its scenario. */
 function expectSavedFixture(string $path, Fixture $fixture): void
 {
     expect(file_get_contents($path))->toBe(FixtureFile::encode($fixture))
-        ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario');
+        ->and(FixtureFile::read($path)->scenario)->toBe($fixture->scenario);
 }
 
 it('writes a recording that replays clean, with the entitlements the application granted', function () {
@@ -258,7 +258,7 @@ it('leaves an existing fixture untouched when replacement cannot be written', fu
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
     $path = nativePath($this->root, 'stripe', 'test-scenario.json');
-    $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
+    $original = shippedFixture();
     file_put_contents($path, $original);
     chmod($this->root.'/stripe', 0555);
 
@@ -361,7 +361,7 @@ it('replaces a fixture without modifying the previous file in place', function (
     mkdir($this->root.'/stripe', 0755, true);
     $path = nativePath($this->root, 'stripe', 'test-scenario.json');
     $previous = $this->root.'/previous.json';
-    $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
+    $original = shippedFixture();
     file_put_contents($path, $original);
     // A reader holding the previous file must still see its complete contents.
     link($path, $previous);

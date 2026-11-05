@@ -98,6 +98,12 @@ function registerPlanLimits(): void
     );
 }
 
+/** The dunning fixture this package ships, exactly as committed. */
+function shippedFixture(): string
+{
+    return (string) file_get_contents(__DIR__.'/../fixtures/stripe/trial-dunning-cancel-reactivate.json');
+}
+
 /**
  * The shipped dunning fixture, altered, as the application's only recording.
  *
@@ -109,7 +115,7 @@ function applicationFixtureFrom(string $scenario, callable $alter): string
     $root = sys_get_temp_dir().'/cashier-dunning-fixtures-'.uniqid();
     mkdir($root.'/stripe', 0755, true);
 
-    $data = json_decode((string) file_get_contents(__DIR__.'/../fixtures/stripe/trial-dunning-cancel-reactivate.json'), true);
+    $data = json_decode(shippedFixture(), true);
     file_put_contents($root.'/stripe/'.$scenario.'.json', json_encode($alter($data)));
 
     config()->set('cashier-dunning.fixtures.path', $root);
