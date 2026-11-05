@@ -7,9 +7,10 @@ use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Reporting\JsonReport;
 use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
+use Impruthvi\CashierDunning\Support\AtomicFile;
 
 /**
- * What a failed recording leaves behind.
+ * What a failed recording leaves behind, when the quarantine itself can be written.
  *
  * Written outside the fixture directory, deliberately, and without the
  * `format_version` key the loader requires — a quarantined recording must be
@@ -23,7 +24,7 @@ use Impruthvi\CashierDunning\Scenarios\Scenario;
  * will ask for, but the recorder does not collect them yet: see
  * https://github.com/impruthvi/cashier-dunning/issues/50.
  *
- * A recording that was complete but did not replay clean also keeps the replay
+ * A recording that did not replay clean, or could not be published, keeps the replay
  * and the fixture it would have written, because there the diagnosis lives in
  * the replay. The fixture is nested, so the artifact still has no top-level
  * `format_version` and still cannot be loaded.
@@ -100,19 +101,15 @@ final readonly class QuarantineArtifact
      *
      * The filename carries the scenario and a timestamp, because the second
      * attempt at a recording is the one you most want to compare against the
-     * first.
+     * first. A random suffix keeps attempts in the same second distinct.
      */
     public function write(string $directory): string
     {
-        if (! is_dir($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
         $path = rtrim($directory, DIRECTORY_SEPARATOR)
             .DIRECTORY_SEPARATOR
-            .$this->scenario->name.'-'.$this->failedAt->format('Ymd-His').'.quarantine.json';
+            .$this->scenario->name.'-'.$this->failedAt->format('Ymd-His').'-'.bin2hex(random_bytes(16)).'.quarantine.json';
 
-        file_put_contents($path, $this->encode());
+        AtomicFile::write($path, $this->encode());
 
         return $path;
     }

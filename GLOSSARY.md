@@ -41,5 +41,5 @@ The event types a scenario promises its recording will contain. Required events 
 _Avoid_: Expected events, checklist
 
 **Quarantine**:
-What a refused recording leaves behind: the events Stripe sent before it was refused, and why it was refused. A recording is refused when it is incomplete, cannot be written as a fixture, or does not replay clean. A quarantine is kept where it can never be loaded as a fixture.
+The diagnostics retained from a refused recording: metadata about the events Stripe sent before it was refused, and why it was refused. A recording is refused when it is incomplete, cannot be written as a fixture, or does not replay clean. A quarantine is kept where it can never be loaded as a fixture. If it cannot be saved, the refusal reports that failure instead of claiming a quarantine exists.
 _Avoid_: Failed fixture, draft, partial recording

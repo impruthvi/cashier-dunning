@@ -121,3 +121,26 @@ it('keeps the cause and what was captured once it says where the quarantine went
         ->and($exception->captured)->toHaveCount(1)
         ->and($exception->artifactPath)->toBe('/tmp/quarantine/x.json');
 });
+
+it('preserves distinct quarantines from the same second', function () {
+    $directory = sys_get_temp_dir().'/cd-quarantine-collision-'.uniqid();
+    $first = $second = null;
+
+    try {
+        $first = shortRecording()->write($directory);
+        $contents = file_get_contents($first);
+        $second = shortRecording()->write($directory);
+
+        expect($second)->not->toBe($first)
+            ->and(file_get_contents($first))->toBe($contents)
+            ->and(file_get_contents($second))->toBe(shortRecording()->encode())
+            ->and(glob($directory.'/.publication-*'))->toBe([]);
+    } finally {
+        foreach ([$first, $second] as $path) {
+            if ($path !== null) {
+                unlink($path);
+            }
+        }
+        @rmdir($directory);
+    }
+});

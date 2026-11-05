@@ -4,6 +4,7 @@ namespace Impruthvi\CashierDunning\Fixtures;
 
 use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+use Impruthvi\CashierDunning\Support\AtomicFile;
 use JsonException;
 
 /**
@@ -99,12 +100,6 @@ final class FixtureFile
 
     public static function write(Fixture $fixture, string $path): void
     {
-        $directory = dirname($path);
-
-        if (! is_dir($directory)) {
-            mkdir($directory, 0755, true);
-        }
-
-        file_put_contents($path, self::encode($fixture));
+        AtomicFile::write($path, self::encode($fixture));
     }
 }

@@ -15,14 +15,16 @@ use Throwable;
 /**
  * Raised when a recording does not become a fixture.
  *
- * Three ways that happens. The recording is incomplete: a required event never
+ * Four ways that happens. The recording is incomplete: a required event never
  * arrived, Stripe rate limited it, or the test clock stuck. It cannot be
- * written as a fixture. Or it does not replay clean through the application.
+ * written as a fixture. It does not replay clean through the application. Or
+ * it replays clean but the fixture cannot be saved to disk.
  *
  * Each one is refused the same way, because each one is worse as a fixture than
  * no fixture at all. A short recording replays green while proving nothing, and
  * a recording that cannot be replayed looks like coverage. What was captured is
- * quarantined instead, and the refusal says where.
+ * quarantined instead when persistence permits; otherwise the refusal reports
+ * both failures without claiming an artifact.
  */
 final class RecordingRefused extends RuntimeException
 {
@@ -42,6 +44,7 @@ final class RecordingRefused extends RuntimeException
         public readonly ?Fixture $fixture = null,
         public readonly ?string $artifactPath = null,
         ?Throwable $previous = null,
+        public readonly ?Throwable $quarantineFailure = null,
     ) {
         parent::__construct($this->compose(), previous: $previous);
     }
@@ -100,6 +103,41 @@ final class RecordingRefused extends RuntimeException
     public static function replayRefused(Fixture $fixture, array $captured, CarbonImmutable $startedAt, SimulationFailed $cause): self
     {
         return self::unreplayable($fixture, $captured, $startedAt, $cause->getMessage(), previous: $cause);
+    }
+
+    /** @param list<array<string, mixed>> $captured */
+    public static function publicationFailed(Fixture $fixture, array $captured, CarbonImmutable $startedAt, ReplayReport $report, Throwable $cause): self
+    {
+        return new self(
+            scenario: $fixture->scenario,
+            reason: $cause->getMessage(),
+            refusal: 'could not be published',
+            consequence: 'Any previously published fixture was left untouched.',
+            missing: [],
+            captured: $captured,
+            startedAt: $startedAt,
+            report: $report,
+            fixture: $fixture,
+            previous: $cause,
+        );
+    }
+
+    /** Retain the original cause as well as the failure to save diagnostics. */
+    public function quarantineFailed(Throwable $cause): self
+    {
+        return new self(
+            scenario: $this->scenario,
+            reason: $this->reason,
+            refusal: $this->refusal,
+            consequence: $this->consequence,
+            missing: $this->missing,
+            captured: $this->captured,
+            startedAt: $this->startedAt,
+            report: $this->report,
+            fixture: $this->fixture,
+            previous: $this->getPrevious(),
+            quarantineFailure: $cause,
+        );
     }
 
     /** The same refusal, now that what it captured has been quarantined at this path. */
@@ -193,6 +231,12 @@ final class RecordingRefused extends RuntimeException
         if ($this->artifactPath !== null) {
             $lines[] = '';
             $lines[] = "Diagnostics written to {$this->artifactPath}";
+        }
+
+        if ($this->quarantineFailure !== null) {
+            $lines[] = '';
+            $lines[] = 'Quarantine could not be written: '.$this->quarantineFailure->getMessage();
+            $lines[] = 'No diagnostic artifact was written.';
         }
 
         return implode("\n", $lines);
