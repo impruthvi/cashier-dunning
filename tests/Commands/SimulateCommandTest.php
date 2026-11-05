@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\Record\Recorder;
 use Laravel\Cashier\Events\WebhookReceived;
@@ -129,6 +130,29 @@ it('shows the replay a fresh recording failed, and writes no fixture', function 
         expect(glob($root.'/quarantine/*.quarantine.json') ?: [])->toHaveCount(1)
             ->and(file_exists($root.'/stripe/downgrade-over-usage-limit.json'))->toBeFalse();
     } finally {
+        $cleanup();
+    }
+});
+
+it('reports publication and quarantine failures and exits unsuccessfully', function () {
+    billableUser();
+    [$root, $cleanup] = scriptedRecording([
+        subscriptionEvent('customer.subscription.created', 'trialing'),
+        subscriptionEvent('customer.subscription.updated', 'active'),
+    ]);
+    mkdir($root);
+    file_put_contents($root.'/stripe', 'blocked');
+    file_put_contents($root.'/quarantine', 'blocked');
+
+    try {
+        $exit = Artisan::call('billing:simulate downgrade-over-usage-limit --record');
+
+        expect($exit)->toBe(1)
+            ->and(Artisan::output())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
+            ->and(Artisan::output())->not->toContain('Diagnostics written to', 'Wrote '.$root);
+    } finally {
+        unlink($root.'/stripe');
+        unlink($root.'/quarantine');
         $cleanup();
     }
 });

@@ -6,17 +6,20 @@ use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
+use Impruthvi\CashierDunning\Runner\ReplayReport;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
 use Impruthvi\CashierDunning\Runner\StepResult;
 use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
+use Throwable;
 
 /**
  * Records a scenario, replays it, and only then writes it.
  *
- * Every fresh recording ends here in one of two ways: as a fixture on disk that
- * has replayed clean once, or as a quarantine beside it with a refusal saying
- * why. No caller decides between the two, so no caller can get it wrong.
+ * A fresh recording is published only after a clean replay. Refusals attempt
+ * quarantine; if persistence fails too, the refusal keeps both causes and
+ * claims no artifact. No caller decides between publication and quarantine.
+ * Publication replaces a previous fixture only once the new file is complete.
  *
  * The replay does two jobs at once. A recording captures what Stripe did, but a
  * fixture's entitlement column is what the *application* made of it, and that
@@ -46,7 +49,7 @@ final readonly class RecordAndVerify
      * @return array{fixture: Fixture, path: string} the fixture as written, and where
      *
      * @throws RecordingRefused when no fixture was written; its artifactPath
-     *                          says where the capture was quarantined
+     *                          says where the capture was quarantined, or is null if writing failed
      */
     public function record(Scenario $scenario, ?CarbonImmutable $startsAt = null): array
     {
@@ -58,28 +61,42 @@ final readonly class RecordAndVerify
         try {
             ['fixture' => $recorded, 'captured' => $captured] = $this->recorder->record($scenario, $startsAt);
 
-            $fixture = $this->verified($recorded, $captured, $startsAt);
+            $report = $this->verified($recorded, $captured, $startsAt);
+            $fixture = $recorded->withEntitlements(array_map(
+                static fn (StepResult $step): array => $step->actualEntitlements,
+                $report->steps
+            ));
+
+            $path = $this->fixturePath
+                .DIRECTORY_SEPARATOR.$fixture->provider->value
+                .DIRECTORY_SEPARATOR.$fixture->scenario.'.json';
+
+            try {
+                FixtureFile::write($fixture, $path);
+            } catch (Throwable $cause) {
+                throw RecordingRefused::publicationFailed($fixture, $captured, $startsAt, $report, $cause);
+            }
         } catch (RecordingRefused $refusal) {
-            throw $refusal->quarantinedAt($this->quarantine($scenario, $refusal));
+            try {
+                $artifactPath = $this->quarantine($scenario, $refusal);
+            } catch (Throwable $cause) {
+                throw $refusal->quarantineFailed($cause);
+            }
+
+            throw $refusal->quarantinedAt($artifactPath);
         }
-
-        $path = $this->fixturePath
-            .DIRECTORY_SEPARATOR.$fixture->provider->value
-            .DIRECTORY_SEPARATOR.$fixture->scenario.'.json';
-
-        FixtureFile::write($fixture, $path);
 
         return ['fixture' => $fixture, 'path' => $path];
     }
 
     /**
-     * The recording with the entitlements the application granted at each step.
+     * The successful replay, including the entitlements to publish at each step.
      *
      * @param  list<array<string, mixed>>  $captured  what Stripe sent, kept for the quarantine
      *
      * @throws RecordingRefused when the recording does not replay clean
      */
-    private function verified(Fixture $recorded, array $captured, CarbonImmutable $startsAt): Fixture
+    private function verified(Fixture $recorded, array $captured, CarbonImmutable $startsAt): ReplayReport
     {
         try {
             $report = $this->runner->run($recorded);
@@ -91,10 +108,7 @@ final readonly class RecordAndVerify
             throw RecordingRefused::didNotReplay($recorded, $captured, $startsAt, $report);
         }
 
-        return $recorded->withEntitlements(array_map(
-            static fn (StepResult $step): array => $step->actualEntitlements,
-            $report->steps
-        ));
+        return $report;
     }
 
     /** @return string where the quarantine was written */

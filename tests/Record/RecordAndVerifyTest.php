@@ -15,8 +15,8 @@ use Stripe\Exception\RateLimitException;
 
 /*
  * Recording, verifying and writing are one decision: a fixture reaches disk only
- * once it has replayed clean, and everything else that ends a recording leaves a
- * quarantine behind. These tests cross that one interface, with Stripe scripted
+ * once it has replayed clean. Refusals attempt quarantine and retain both causes
+ * if persistence fails too. These tests cross that one interface, with Stripe scripted
  * and the real replay runner behind it.
  */
 
@@ -218,4 +218,148 @@ it('quarantines a recording the simulation environment refused to replay', funct
         ->and(array_column($artifact['captured_events'], 'id'))->toBe([$created['id']]);
 
     noFixtureIn($this->root);
+});
+
+it('quarantines a verified fixture when its publication directory is blocked', function () {
+    billableUser();
+    registerDunningPolicy();
+    mkdir($this->root);
+    file_put_contents($this->root.'/stripe', 'blocked');
+    $created = subscriptionEvent('customer.subscription.created', 'trialing');
+
+    try {
+        $e = refusedRecording($this->root, recordingScript([$created]));
+        $artifact = onlyQuarantineIn($this->root);
+
+        expect($e->getMessage())->toContain('could not be published', 'Cannot create directory')
+            ->and($e->getPrevious())->toBeInstanceOf(RuntimeException::class)
+            ->and($e->report?->passed())->toBeTrue()
+            ->and($artifact['reason'])->toBe($e->getPrevious()->getMessage())
+            ->and($artifact['replay']['passed'])->toBeTrue()
+            ->and($artifact['fixture']['steps'][0]['entitlements'])->toEqual(['teams' => true, 'api' => true, 'projects' => 10])
+            ->and(array_column($artifact['captured_events'], 'id'))->toBe([$created['id']])
+            ->and(file_get_contents($this->root.'/stripe'))->toBe('blocked');
+
+        expect(fn () => FixtureFile::read(quarantinesIn($this->root)[0]))->toThrow(InvalidFixture::class, 'format_version');
+    } finally {
+        unlink($this->root.'/stripe');
+    }
+});
+
+it('leaves an existing fixture untouched when replacement cannot be written', function () {
+    billableUser();
+    mkdir($this->root.'/stripe', 0755, true);
+    $path = $this->root.'/stripe/test-scenario.json';
+    $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
+    file_put_contents($path, $original);
+    chmod($this->root.'/stripe', 0555);
+
+    try {
+        // Privileged processes bypass directory permissions; do not claim this
+        // failure was exercised when the filesystem cannot enforce it.
+        if (is_writable($this->root.'/stripe')) {
+            test()->markTestSkipped('Requires an unprivileged filesystem user.');
+        }
+
+        $e = refusedRecording($this->root, recordingScript([
+            subscriptionEvent('customer.subscription.created', 'trialing'),
+        ]));
+
+        expect($e->getMessage())->toContain('Cannot create temporary file')
+            ->and(file_get_contents($path))->toBe($original)
+            ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue()
+            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([]);
+    } finally {
+        chmod($this->root.'/stripe', 0755);
+    }
+});
+
+it('cleans up the temporary file when the final rename fails', function () {
+    billableUser();
+    $destination = $this->root.'/stripe/test-scenario.json';
+    mkdir($destination, 0755, true);
+
+    try {
+        $e = refusedRecording($this->root, recordingScript([
+            subscriptionEvent('customer.subscription.created', 'trialing'),
+        ]));
+
+        expect($e->getMessage())->toContain('Cannot publish file ['.$destination.']')
+            ->and(is_dir($destination))->toBeTrue()
+            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([])
+            ->and(onlyQuarantineIn($this->root)['replay']['passed'])->toBeTrue();
+    } finally {
+        rmdir($destination);
+    }
+});
+
+it('retains both failures when neither publication nor quarantine can be written', function () {
+    billableUser();
+    mkdir($this->root);
+    file_put_contents($this->root.'/stripe', 'blocked fixture directory');
+    file_put_contents($this->root.'/quarantine', 'blocked quarantine directory');
+
+    try {
+        $e = refusedRecording($this->root, recordingScript([
+            subscriptionEvent('customer.subscription.created', 'trialing'),
+        ]));
+
+        expect($e->getMessage())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
+            ->and($e->getMessage())->not->toContain('Diagnostics written to')
+            ->and($e->getPrevious()?->getMessage())->toContain($this->root.'/stripe')
+            ->and($e->quarantineFailure?->getMessage())->toContain($this->root.'/quarantine')
+            ->and($e->artifactPath)->toBeNull()
+            ->and($e->captured)->toHaveCount(1)
+            ->and($e->report?->passed())->toBeTrue()
+            ->and(quarantinesIn($this->root))->toBe([]);
+    } finally {
+        unlink($this->root.'/stripe');
+        unlink($this->root.'/quarantine');
+    }
+});
+
+it('keeps the original recording refusal when quarantine fails', function () {
+    mkdir($this->root);
+    file_put_contents($this->root.'/quarantine', 'blocked');
+
+    try {
+        $e = refusedRecording($this->root, recordingScript([
+            subscriptionEvent('customer.subscription.created', '{{bad}}'),
+        ]));
+
+        expect($e->getMessage())->toContain('[{{bad}}] is not a placeholder', 'Quarantine could not be written')
+            ->and($e->getPrevious())->toBeInstanceOf(InvalidFixture::class)
+            ->and($e->quarantineFailure)->toBeInstanceOf(RuntimeException::class)
+            ->and($e->artifactPath)->toBeNull();
+    } finally {
+        unlink($this->root.'/quarantine');
+    }
+});
+
+it('replaces the published fixture without modifying the previous file in place', function () {
+    billableUser();
+    mkdir($this->root.'/stripe', 0755, true);
+    $path = $this->root.'/stripe/test-scenario.json';
+    $previous = $this->root.'/previous.json';
+    $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
+    file_put_contents($path, $original);
+    // A reader holding the previous file must still see its complete contents.
+    link($path, $previous);
+    [$stripe, , $restore] = scriptedStripe(recordingScript([
+        subscriptionEvent('customer.subscription.created', 'trialing'),
+    ]));
+
+    try {
+        $result = (new RecordAndVerify(new Recorder($stripe, eventTimeoutSeconds: 0), app(ReplayRunner::class), $this->root))
+            ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+
+        expect($result['path'])->toBe($path)
+            ->and(file_get_contents($path))->toBe(FixtureFile::encode($result['fixture']))
+            ->and(FixtureFile::read($path)->scenario)->toBe('test-scenario')
+            ->and(file_get_contents($previous))->toBe($original)
+            ->and(glob($this->root.'/stripe/.publication-*'))->toBe([]);
+    } finally {
+        $restore();
+        unlink($previous);
+    }
 });
