@@ -249,16 +249,22 @@ it('quarantines a verified fixture when its publication directory is blocked', f
 it('leaves an existing fixture untouched when replacement cannot be written', function () {
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
-    $path = $this->root.'/stripe/test-scenario.json';
+    $path = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
     $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
     file_put_contents($path, $original);
     chmod($this->root.'/stripe', 0555);
 
     try {
-        // Privileged processes bypass directory permissions; do not claim this
-        // failure was exercised when the filesystem cannot enforce it.
-        if (is_writable($this->root.'/stripe')) {
-            test()->markTestSkipped('Requires an unprivileged filesystem user.');
+        // chmod and is_writable do not reliably describe directory creation
+        // permissions on Windows. Probe the operation this test must prevent;
+        // privileged users can also bypass permission bits on Unix.
+        $probePath = $this->root.'/stripe/.permission-probe';
+        $probe = @fopen($probePath, 'xb');
+
+        if ($probe !== false) {
+            fclose($probe);
+            unlink($probePath);
+            test()->markTestSkipped('Requires a directory that denies file creation after chmod.');
         }
 
         $e = refusedRecording($this->root, recordingScript([
@@ -276,7 +282,7 @@ it('leaves an existing fixture untouched when replacement cannot be written', fu
 
 it('cleans up the temporary file when the final rename fails', function () {
     billableUser();
-    $destination = $this->root.'/stripe/test-scenario.json';
+    $destination = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
     mkdir($destination, 0755, true);
 
     try {
@@ -306,8 +312,8 @@ it('retains both failures when neither publication nor quarantine can be written
 
         expect($e->getMessage())->toContain('could not be published', 'Quarantine could not be written', 'No diagnostic artifact was written')
             ->and($e->getMessage())->not->toContain('Diagnostics written to')
-            ->and($e->getPrevious()?->getMessage())->toContain($this->root.'/stripe')
-            ->and($e->quarantineFailure?->getMessage())->toContain($this->root.'/quarantine')
+            ->and($e->getPrevious()?->getMessage())->toContain($this->root.DIRECTORY_SEPARATOR.'stripe')
+            ->and($e->quarantineFailure?->getMessage())->toContain($this->root.DIRECTORY_SEPARATOR.'quarantine')
             ->and($e->artifactPath)->toBeNull()
             ->and($e->captured)->toHaveCount(1)
             ->and($e->report?->passed())->toBeTrue()
@@ -339,7 +345,7 @@ it('keeps the original recording refusal when quarantine fails', function () {
 it('replaces the published fixture without modifying the previous file in place', function () {
     billableUser();
     mkdir($this->root.'/stripe', 0755, true);
-    $path = $this->root.'/stripe/test-scenario.json';
+    $path = $this->root.DIRECTORY_SEPARATOR.'stripe'.DIRECTORY_SEPARATOR.'test-scenario.json';
     $previous = $this->root.'/previous.json';
     $original = file_get_contents(dirname(__DIR__, 2).'/fixtures/stripe/trial-dunning-cancel-reactivate.json');
     file_put_contents($path, $original);
