@@ -7,6 +7,7 @@ use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
 use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Record\QuarantineArtifact;
 use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
+use Impruthvi\CashierDunning\Support\AtomicFile;
 use Stripe\Exception\RateLimitException;
 
 function shortRecording(): QuarantineArtifact
@@ -134,7 +135,7 @@ it('preserves distinct quarantines from the same second', function () {
         expect($second)->not->toBe($first)
             ->and(file_get_contents($first))->toBe($contents)
             ->and(file_get_contents($second))->toBe(shortRecording()->encode())
-            ->and(glob($directory.'/.cashier-dunning-*'))->toBe([]);
+            ->and(glob($directory.'/'.AtomicFile::TEMPORARY_PREFIX.'*'))->toBe([]);
     } finally {
         foreach ([$first, $second] as $path) {
             if ($path !== null) {
