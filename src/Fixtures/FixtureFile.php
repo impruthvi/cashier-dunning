@@ -37,7 +37,9 @@ final class FixtureFile
      * refused when an event or a recorded API response carries a field the
      * allowlist does not permit, when an API exchange matches on a request
      * parameter it does not permit, when a match path is missing or breaks its
-     * shape rule ({@see MatchPath}), when a required event in its manifest
+     * shape rule ({@see MatchPath}), when a whole string value in an event,
+     * match body or response body is a literal provider id recognised by
+     * {@see Placeholder::kindOf()}, when a required event in its manifest
      * never arrived, or when a field has the wrong type: a status of `"200"`, a
      * match body that is a list, an event without a string `type` and `id`.
      * Those are refused rather than cast, because a cast replays something the
@@ -65,12 +67,14 @@ final class FixtureFile
         $allowlist = new Allowlist;
 
         foreach ($fixture->steps as $index => $step) {
-            foreach ($step->events as $event) {
+            foreach ($step->events as $eventIndex => $event) {
                 $offending = $allowlist->disallowedPaths($event);
 
                 if ($offending !== []) {
                     throw DisallowedField::inStepEvent($index, WebhookEvent::type($event) ?? '', $offending);
                 }
+
+                self::refuseLiteralIds($event, $index, "event {$eventIndex} [".(WebhookEvent::type($event) ?? '').']');
             }
 
             foreach ($step->apiExchanges as $exchange) {
@@ -90,11 +94,15 @@ final class FixtureFile
                     throw DisallowedField::inApiMatch($index, $exchange, $offending);
                 }
 
+                self::refuseLiteralIds($exchange->matchBody, $index, "the match body of [{$exchange->method} {$exchange->path}]");
+
                 $offending = $allowlist->disallowedPathsInObject($exchange->responseBody);
 
                 if ($offending !== []) {
                     throw DisallowedField::inApiResponse($index, $exchange, $offending);
                 }
+
+                self::refuseLiteralIds($exchange->responseBody, $index, "the response body of [{$exchange->method} {$exchange->path}]");
             }
         }
 
@@ -103,6 +111,20 @@ final class FixtureFile
         }
 
         return $fixture;
+    }
+
+    /** @param array<array-key, mixed> $payload */
+    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = ''): void
+    {
+        foreach ($payload as $key => $value) {
+            $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
+
+            if (is_array($value)) {
+                self::refuseLiteralIds($value, $step, $where, $path);
+            } elseif (is_string($value) && ($kind = Placeholder::kindOf($value)) !== null) {
+                throw InvalidFixture::literalProviderId($step, $where, $path, $kind);
+            }
+        }
     }
 
     public static function encode(Fixture $fixture): string

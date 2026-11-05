@@ -475,3 +475,68 @@ it('defaults the provenance and manifest of a fixture that has neither', functio
 it('defaults the entitlements of a step that has none', function () {
     expect(FixtureFile::decode(json_encode(minimalFixtureArray()))->steps[0]->entitlements)->toBe([]);
 });
+
+it('refuses recognised literal provider ids in event values at any depth', function (array $event, string $path, string $kind) {
+    $data = minimalFixtureArray();
+    $data['steps'][0]['events'][] = $event;
+
+    expect(fn () => FixtureFile::decode(json_encode($data)))
+        ->toThrow(InvalidFixture::class, "Step 0 is invalid: event 1 [customer.subscription.created] contains a literal provider id at [{$path}]. Use a {$kind} placeholder such as {{".$kind.'_1}}.');
+})->with([
+    'event id' => [['id' => 'evt_RealId', 'type' => 'customer.subscription.created'], 'id', 'evt'],
+    'customer' => [['id' => '{{evt_2}}', 'type' => 'customer.subscription.created', 'data' => ['object' => ['customer' => 'cus_RealId']]], 'data.object.customer', 'cus'],
+    'nested list' => [['id' => '{{evt_2}}', 'type' => 'customer.subscription.created', 'data' => ['object' => ['items' => ['data' => [['price' => ['id' => 'price_RealId']]]]]]], 'data.object.items.data.0.price.id', 'price'],
+]);
+
+it('refuses recognised literal provider ids in API exchange bodies', function (string $body, array $payload, string $path, string $kind) {
+    $json = $body === 'match'
+        ? fixtureWithExchangeMatch($payload)
+        : fixtureWithExchangeResponse($payload);
+    $method = $body === 'match' ? 'POST' : 'GET';
+
+    expect(fn () => FixtureFile::decode($json))
+        ->toThrow(InvalidFixture::class, "Step 0 is invalid: the {$body} body of [{$method} /v1/subscriptions/{{sub_1}}] contains a literal provider id at [{$path}]. Use a {$kind} placeholder such as {{".$kind.'_1}}.');
+})->with([
+    'match customer' => ['match', ['customer' => 'cus_RealId'], 'customer', 'cus'],
+    'match list' => ['match', ['items' => [['price' => 'price_RealId']]], 'items.0.price', 'price'],
+    'response id' => ['response', ['id' => 'sub_sched_RealId'], 'id', 'sub_sched'],
+    'response list' => ['response', ['object' => 'subscription', 'items' => ['data' => [['price' => ['product' => 'prod_RealId']]]]], 'items.data.0.price.product', 'prod'],
+]);
+
+it('preserves values outside the literal provider id rule in every provider payload', function (mixed $value) {
+    $data = minimalFixtureArray();
+    $data['steps'][0]['events'][0]['data']['object']['customer'] = $value;
+    $fixture = FixtureFile::decode(json_encode($data));
+    $match = FixtureFile::decode(fixtureWithExchangeMatch(['customer' => $value]));
+    $response = FixtureFile::decode(fixtureWithExchangeResponse(['object' => 'subscription', 'customer' => $value]));
+
+    expect($fixture->steps[0]->events[0]['data']['object']['customer'])->toBe($value)
+        ->and($match->steps[0]->apiExchanges[0]->matchBody['customer'])->toBe($value)
+        ->and($response->steps[0]->apiExchanges[0]->responseBody['customer'])->toBe($value);
+})->with([
+    'id placeholder' => ['{{cus_1}}'],
+    'time placeholder' => ['{{t+14d}}'],
+    'unsupported account' => ['acct_RealId'],
+    'unsupported setup intent' => ['seti_RealId'],
+    'embedded text' => ['See cus_RealId'],
+    'embedded path' => ['/v1/customers/cus_RealId'],
+    'embedded placeholder' => ['See {{cus_1}}'],
+    'ordinary string' => ['active'],
+    'empty string' => [''],
+    'integer' => [2],
+    'boolean' => [false],
+    'null' => [null],
+]);
+
+it('does not scan fixture metadata or keys for literal provider ids', function () {
+    $data = minimalFixtureArray(['scenario' => 'sub_RealId', 'provenance' => ['cus_RealId' => 'cus_RealId']]);
+    $data['steps'][0]['label'] = 'evt_RealId';
+    $data['steps'][0]['entitlements'] = ['price_RealId' => 'prod_RealId'];
+
+    $fixture = FixtureFile::decode(json_encode($data));
+
+    expect($fixture->scenario)->toBe('sub_RealId')
+        ->and($fixture->provenance)->toBe(['cus_RealId' => 'cus_RealId'])
+        ->and($fixture->steps[0]->label)->toBe('evt_RealId')
+        ->and($fixture->steps[0]->entitlements)->toBe(['price_RealId' => 'prod_RealId']);
+});
