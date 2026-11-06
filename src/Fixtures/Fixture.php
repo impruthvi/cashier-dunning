@@ -40,18 +40,7 @@ final readonly class Fixture
         public array $steps,
         public int $formatVersion = self::FORMAT_VERSION,
     ) {
-        // Checked here rather than when a placeholder is resolved: by then the
-        // replay is underway inside the application's webhook handler, and a
-        // typo such as {{sub-1}} would surface as a request that matched
-        // nothing. Refused when the fixture is built, it names the step and the
-        // token instead.
-        foreach ($steps as $index => $step) {
-            foreach ($step->placeholderTokens() as $token) {
-                if (! $token->isRecognised()) {
-                    throw InvalidFixture::unrecognisedPlaceholder($index, $token->text);
-                }
-            }
-        }
+        FixtureRules::enforce($this);
     }
 
     /** @param array<string, mixed>|stdClass $data */
@@ -71,16 +60,11 @@ final readonly class Fixture
             throw InvalidFixture::unsupportedFormatVersion($version, self::FORMAT_VERSION);
         }
 
-        $scenario = $fixture->string('scenario');
         $steps = $fixture->objects('steps');
-
-        if ($steps === []) {
-            throw InvalidFixture::empty($scenario);
-        }
 
         return new self(
             provider: Provider::fromFixture($fixture->string('provider')),
-            scenario: $scenario,
+            scenario: $fixture->string('scenario'),
             provenance: $fixture->object('provenance'),
             manifest: Manifest::fromDecoded($fixture->nested('manifest')),
             steps: array_map(
@@ -172,22 +156,5 @@ final readonly class Fixture
         }
 
         return count($found) === 1 ? (string) array_key_first($found) : null;
-    }
-
-    /**
-     * Required events the manifest declared that the recording never captured.
-     * A fixture with any is refused when FixtureFile loads it, rather than
-     * quietly replayed.
-     *
-     * @return list<string>
-     */
-    public function missingRequiredEvents(): array
-    {
-        return $this->manifest->missingFrom($this->eventTypes());
-    }
-
-    public function satisfiesManifest(): bool
-    {
-        return $this->manifest->isSatisfiedBy($this->eventTypes());
     }
 }

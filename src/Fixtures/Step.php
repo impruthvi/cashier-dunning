@@ -43,7 +43,10 @@ final readonly class Step
             advanceTo: Duration::parse($step->string('advance_to')),
             label: $step->string('label'),
             events: array_map(self::event(...), $step->objects('events')),
-            apiExchanges: array_map(ApiExchange::fromDecoded(...), $step->objects('api_responses')),
+            apiExchanges: array_map(
+                static fn (DecodedObject $exchange): ApiExchange => ApiExchange::fromDecoded($exchange, $index),
+                $step->objects('api_responses'),
+            ),
             entitlements: $step->scalars('entitlements'),
         );
     }
