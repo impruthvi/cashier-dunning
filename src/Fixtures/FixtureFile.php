@@ -23,6 +23,20 @@ final class FixtureFile
         | JSON_UNESCAPED_UNICODE
         | JSON_THROW_ON_ERROR;
 
+    /**
+     * The fields of Stripe's error body that hold its own enumerated
+     * vocabulary, such as `card_error` and `card_declined`. Those read as
+     * `card_` ids to {@see Placeholder::kindOf()}, but are never ids, so the
+     * literal-id rule skips them. `message` and `param` are still checked.
+     *
+     * The rule is narrowed here rather than in kindOf() because kindOf() also
+     * decides what the recorder replaces, and real Stripe ids can be all
+     * lowercase words, such as a custom price id `price_monthly`.
+     *
+     * @var list<string>
+     */
+    private const ERROR_VOCABULARY = ['error.type', 'error.code', 'error.decline_code'];
+
     public static function read(string $path): Fixture
     {
         if (! is_file($path)) {
@@ -104,7 +118,12 @@ final class FixtureFile
                     throw DisallowedField::inApiResponse($index, $exchange, $offending);
                 }
 
-                self::refuseLiteralIds($exchange->responseBody, $index, "the response body of [{$exchange->method} {$exchange->path}]");
+                self::refuseLiteralIds(
+                    $exchange->responseBody,
+                    $index,
+                    "the response body of [{$exchange->method} {$exchange->path}]",
+                    exempt: Allowlist::isErrorBody($exchange->responseBody) ? self::ERROR_VOCABULARY : [],
+                );
             }
         }
 
@@ -115,14 +134,19 @@ final class FixtureFile
         return $fixture;
     }
 
-    /** @param array<array-key, mixed> $payload */
-    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = ''): void
+    /**
+     * @param  array<array-key, mixed>  $payload
+     * @param  list<string>  $exempt  paths whose values are never provider ids
+     */
+    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = '', array $exempt = []): void
     {
         foreach ($payload as $key => $value) {
             $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
 
             if (is_array($value)) {
-                self::refuseLiteralIds($value, $step, $where, $path);
+                self::refuseLiteralIds($value, $step, $where, $path, $exempt);
+            } elseif (in_array($path, $exempt, true)) {
+                continue;
             } elseif (is_string($value) && ($kind = Placeholder::kindOf($value)) !== null) {
                 throw InvalidFixture::literalProviderId($step, $where, $path, $kind);
             }

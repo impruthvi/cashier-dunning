@@ -163,6 +163,48 @@ it('refuses a recorded API response of a kind the allowlist has no rules for', f
     ]));
 })->throws(InvalidFixture::class, 'billing_details');
 
+it('loads a recorded Stripe error response', function () {
+    $fixture = FixtureFile::decode(fixtureWithExchangeResponse(['error' => [
+        'type' => 'card_error',
+        'code' => 'card_declined',
+        'decline_code' => 'insufficient_funds',
+        'message' => 'Your card was declined.',
+        'param' => '',
+    ]]));
+
+    expect($fixture->steps[0]->apiExchanges[0]->responseBody['error']['code'])->toBe('card_declined');
+});
+
+it('refuses a recorded Stripe error response carrying a field the allowlist does not permit', function () {
+    // Stripe puts the charge and payment method behind a decline on the error.
+    // Only Stripe's own vocabulary and message are permitted.
+    FixtureFile::decode(fixtureWithExchangeResponse(['error' => [
+        'type' => 'card_error',
+        'code' => 'card_declined',
+        'payment_method' => ['billing_details' => ['email' => 'someone@example.com']],
+    ]]));
+})->throws(InvalidFixture::class, 'Step 0 is invalid: the recorded response to [GET /v1/subscriptions/{{sub_1}}] contains fields not permitted by the allowlist: error.payment_method');
+
+it('refuses a literal card id in a recorded Stripe error response', function () {
+    // The error's vocabulary, such as card_declined, is exempt from the
+    // literal-id rule. Its other fields are not.
+    FixtureFile::decode(fixtureWithExchangeResponse(['error' => [
+        'type' => 'card_error',
+        'code' => 'card_declined',
+        'param' => 'card_1AbC23',
+    ]]));
+})->throws(InvalidFixture::class, 'Step 0 is invalid: the response body of [GET /v1/subscriptions/{{sub_1}}] contains a literal provider id at [error.param]. Use a card placeholder such as {{card_1}}.');
+
+it('refuses Stripe error vocabulary outside an error body', function () {
+    // The exemption is for Stripe's error body alone. A subscription that
+    // carries the same string is judged as any other response is.
+    FixtureFile::decode(fixtureWithExchangeResponse([
+        'id' => '{{sub_1}}',
+        'object' => 'subscription',
+        'status' => 'card_declined',
+    ]));
+})->throws(InvalidFixture::class, 'contains a literal provider id at [status]');
+
 /** @param array<string, mixed> $matchBody */
 function fixtureWithExchangeMatch(array $matchBody): string
 {

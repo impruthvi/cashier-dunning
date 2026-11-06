@@ -100,6 +100,21 @@ final class Allowlist
         'expand.*',
     ];
 
+    /**
+     * Stripe's error body, such as the 402 of a card decline. It has no
+     * `object` field of its own, so it is recognised by having none and
+     * carrying `error` instead. `message` is Stripe's text, not the customer's.
+     *
+     * @var list<string>
+     */
+    private const ERROR = [
+        'data.object.error.type',
+        'data.object.error.code',
+        'data.object.error.decline_code',
+        'data.object.error.message',
+        'data.object.error.param',
+    ];
+
     /** @var list<string> */
     private const SUBSCRIPTION = [
         'data.object.status',
@@ -229,12 +244,27 @@ final class Allowlist
      */
     private function permittedForObject(array $object): array
     {
+        if (self::isErrorBody($object)) {
+            return self::ERROR;
+        }
+
         $kind = $object['object'] ?? null;
 
         return array_merge(
             ['data.object.id', 'data.object.object'],
             is_string($kind) ? (self::BY_OBJECT[$kind] ?? []) : [],
         );
+    }
+
+    /**
+     * Whether a bare provider object is Stripe's error body: an `error` and no
+     * `object` of its own.
+     *
+     * @param  array<array-key, mixed>  $object
+     */
+    public static function isErrorBody(array $object): bool
+    {
+        return ! array_key_exists('object', $object) && array_key_exists('error', $object);
     }
 
     /** @return list<string> */

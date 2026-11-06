@@ -3,6 +3,7 @@
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Replay\Exceptions\NoSuchStep;
 use Impruthvi\CashierDunning\Replay\Exceptions\UnmatchedRequest;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
@@ -195,11 +196,24 @@ it('replays a recorded error response as a real Stripe exception', function () u
     // the application as the exception it would really see.
     CashierDunning::createBillableUsing(fn () => (object) ['id' => 1]);
 
-    $fixture = fixtureWithSteps([
-        stepWith('card declined', [exchange('POST', '/v1/subscriptions', [], 402, [
-            'error' => ['type' => 'card_error', 'code' => 'card_declined', 'message' => 'Your card was declined.'],
-        ])]),
-    ]);
+    // Built through decode, so the fixture is held to the rules a loaded one is.
+    $fixture = FixtureFile::decode((string) json_encode([
+        'format_version' => 1,
+        'provider' => 'stripe',
+        'scenario' => 'test',
+        'provenance' => ['synthetic' => true],
+        'manifest' => ['required_events' => [], 'optional_events' => []],
+        'steps' => [stepWith('card declined', [[
+            'match' => ['method' => 'POST', 'path' => '/v1/subscriptions', 'body' => new stdClass],
+            'response' => ['status' => 402, 'body' => ['error' => [
+                'type' => 'card_error',
+                'code' => 'card_declined',
+                'decline_code' => 'insufficient_funds',
+                'message' => 'Your card was declined.',
+                'param' => '',
+            ]]],
+        ]])],
+    ]));
 
     expect(fn () => app(SimulationEnvironment::class)->run(
         $fixture,
