@@ -391,8 +391,8 @@ written files, not power-loss durability.
 
 The first two fixtures were recorded against a dedicated synthetic Stripe test
 account with invented products, so there is nothing sensitive in them by
-construction. Field-level redaction runs on write against an allowlist that
-fails closed, and loading a fixture refuses one whose events or recorded API
+construction. Field-level redaction runs on record against an allowlist that
+fails closed, and saving or loading a fixture refuses one whose events or recorded API
 responses carry a field the allowlist does not permit, whose API exchanges
 match on a request parameter it does not permit, whose match paths hold a
 literal provider id or a query string rather than lowercase words and whole
@@ -400,7 +400,7 @@ id placeholders, or that is missing an event its manifest requires. A field
 of the wrong type, such as a status of `"200"` or an event with no string
 `type`, is refused too, rather than cast.
 
-Loading also refuses a whole string value that is a recognised literal provider
+Saving and loading also refuse a whole string value that is a recognised literal provider
 id in an event, API response body or match body, including nested lists. Use
 placeholders such as `{{cus_1}}` instead of `cus_RealId`. The refusal names the
 step, payload location and placeholder kind, plus the method and match path for

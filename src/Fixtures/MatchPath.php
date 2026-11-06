@@ -6,9 +6,9 @@ namespace Impruthvi\CashierDunning\Fixtures;
  * The shape a published API exchange's match path must have, such as
  * `/v1/subscriptions/{{sub_1}}`.
  *
- * Separate from the allowlist, which judges fields: a path is not a field. The
- * recorder only ever writes literal words and whole id placeholders, so this
- * is checked on load, where it catches a hand author's path.
+ * Separate from the allowlist, which judges fields: a path is not a field.
+ * Checked when a fixture is saved or loaded: on save it catches a recorded id
+ * the normalizer did not recognise, and on load a hand author's path.
  *
  *   - It starts with `/` and has no query string or fragment. The provider SDK
  *     hands a request's parameters to the HTTP client separately, and replay
