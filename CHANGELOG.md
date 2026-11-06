@@ -2,6 +2,41 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.5.0 - 2026-11-06
+
+This release checks a recording against the fixture rules before it is saved, and reshapes recording refusals, which breaks the PHP API for consumers who use `RecordingRefused` and the quarantine classes directly.
+
+**User-Facing Fixes**
+
+- A recording that would fail to load is now refused before replay and quarantined, instead of being saved. The allowlist, match-path, literal-ID and manifest rules used to run only on load. Now they also run when a recording is saved. For example, a subscription ID of an unrecognised kind used to end up in a literal match path, get saved, and then be refused the next time it was loaded, after the Stripe quota was already spent. Replay now runs on the fixture exactly as it will be read back from disk.
+- `FixtureFile::write()` refuses a fixture that `FixtureFile::read()` would refuse, and leaves any previous file untouched.
+- Every refusal message now names the required events that never arrived. Before, only an incomplete recording's message did. Now a rate-limited recording or a stuck test clock also says what it was still missing.
+- A recording that is both incomplete and invalid in some other way, such as holding a literal ID, is now refused as "could not be turned into a fixture" rather than "is incomplete". A recording that is only incomplete gets the same refusal as before.
+- Fixture lookup searches only provider folders (`<dir>/stripe/*.json`). A quarantined recording is never mistaken for a fixture, whatever its file is called.
+
+**Breaking PHP API Changes And Migration**
+
+- **`RecordingRefused` keeps only its message, previous exception, `report`, `artifactPath` and `context()`.** The public fields `scenario`, `reason`, `missing`, `captured`, `requestIds`, `startedAt`, `fixture` and `quarantineFailure` are removed. So are the static factories `missingEvents()`, `rateLimited()`, `clockFailed()`, `invalidFixture()`, `didNotReplay()`, `replayRefused()` and `saveFailed()`, and the methods `withRequestIds()`, `quarantinedAt()` and `quarantineFailed()`. Its constructor is `@internal`.
+  Migration: the message names the scenario, the reason, what never arrived and what was captured. For structured data, decode the JSON at `$e->artifactPath`. It has the keys `scenario`, `reason`, `started_at`, `missing_events`, `captured_events` (`id`, `type` and `created` of each event, not full payloads), `request_ids`, and `fixture` and `replay` when the recording got that far. When the quarantine itself could not be saved, `artifactPath` is null and the failure is in `$e->context()['quarantine_failure']`. Do not construct `RecordingRefused` yourself.
+- **`QuarantineArtifact` is removed.** The artifact is now written by the internal `Quarantine`, which `RecordAndVerify` hands every refusal to. Its JSON contents, filename and `quarantine/` location are unchanged.
+  Migration: read the file at `RecordingRefused::$artifactPath` instead of building or writing an artifact.
+- **`RecordingState::$captured` is removed.** Captured events are now collected on the internal `RecordingAttempt`.
+  Migration: there is no public replacement. Read `captured_events` from the quarantine artifact, or the events of the saved fixture.
+- **`InvalidFixture::incomplete()` now returns `IncompleteFixture`** (a new subclass of `InvalidFixture` with a public `missing` list) instead of `self`. Code that catches `InvalidFixture` keeps working.
+  Migration: a subclass of `InvalidFixture` that overrides `incomplete()` must declare `IncompleteFixture` as its return type. To get the missing events, catch `IncompleteFixture` and read `$e->missing`.
+- **`FixtureFile::write()` can now throw `InvalidFixture`** (including `DisallowedField` and `IncompleteFixture`) when the fixture would not load.
+  Migration: callers that write fixtures directly should catch `InvalidFixture`. The previous file is left untouched.
+- **`FixtureRepository::files()` searches only provider folders** (`<dir>/stripe/*.json`). Other subfolders of a fixture directory were never fixtures, and are no longer scanned.
+  Migration: keep fixtures in a folder named after their provider, for example `<dir>/stripe/`.
+- **`Recorder::record()` takes a `RecordingAttempt` and returns the `Fixture`** instead of `{fixture, captured, requestIds}`. `Recorder` remains internal.
+  Migration: use the CLI or `RecordAndVerify`, not `Recorder` on its own.
+
+**Requirements And Verification**
+
+Requirements remain PHP 8.3+, Laravel 12 or 13, Cashier 16, and Stripe PHP 17.4–21 within the declared Composer constraints. Fixture format version remains **1**, and the shipped fixtures are unchanged.
+
+Local checks and merged-main CI pass. **Two live Stripe recording tests remain skipped without a test key; this release has not been freshly verified against a live Stripe test account.**
+
 ## v0.4.0 - 2026-11-05
 
 This release hardens fixture loading and recording failures, improves diagnostics, and introduces breaking changes for consumers using the PHP APIs directly.
@@ -180,6 +215,7 @@ new billable preflight will refuse to run until it is gone:
 ```
 The billable factory created [App\Models\User] with stripe_id [cus_replay1],
 but Cashier::findBillable() returned a different record.
+
 
 
 
