@@ -13,12 +13,152 @@
 [![Tests](https://github.com/impruthvi/cashier-dunning/actions/workflows/run-tests.yml/badge.svg)](https://github.com/impruthvi/cashier-dunning/actions?query=workflow%3Arun-tests+branch%3Amain)
 [![Total Downloads](https://img.shields.io/packagist/dt/impruthvi/cashier-dunning.svg?style=flat-square)](https://packagist.org/packages/impruthvi/cashier-dunning)
 
-Failed payments are where SaaS revenue quietly leaks, and dunning is the code
-least likely to be tested — because testing it properly means waiting a month
-for a card to fail three times.
+Add one step to CI and every pull request replays a real Stripe billing
+lifecycle (a trial, a failing card, retries, cancellation, a comeback) through
+your Cashier application's real webhook route, and fails the build if your app
+grants or revokes access differently than the **fixture** says it should. A
+**replay** needs no Stripe account, no API key and no network, and finishes in
+under a second.
 
-This package records a real Stripe billing lifecycle once, then replays it in
-under a second, forever, with **no Stripe account, no API key and no network**.
+Dunning is the billing code least likely to be tested, because testing it
+properly means waiting a month for a card to fail three times. A fixture is
+that month, recorded once from a real Stripe test account.
+
+## Installation
+
+```bash
+composer require impruthvi/cashier-dunning --dev
+```
+
+Requires PHP 8.3+, Laravel 12 or 13, and `laravel/cashier` 16. Applications
+still on Laravel 11 can stay on v0.2.x, the last release line that supported it.
+
+## Point it at your billable
+
+A **billable** is the model a fixture's webhooks are addressed to, usually your
+`User`. Tell the package how to make one, in a service provider:
+
+```php
+use Impruthvi\CashierDunning\CashierDunning;
+
+CashierDunning::createBillableUsing(fn () => User::factory()->create([
+    'stripe_id' => 'cus_replay1',
+    'email' => 'replay@example.test',
+]));
+```
+
+A fixture stores no real Stripe ids. Each one is replaced with a stand-in when
+the fixture is replayed, and the customer in every shipped fixture becomes
+`cus_replay1`. Without this registration, replay falls back to your Cashier
+model's own factory. That record won't carry `cus_replay1`, so the replay stops
+before sending a single webhook. Pin the email too; [Replaying out of
+order](#replaying-out-of-order) explains why a random address breaks the comparison.
+
+## Run your first replay
+
+A **scenario** is a named billing story with a fixture behind it. To see the
+ones available, run the command without one:
+
+```bash
+php artisan billing:simulate
+```
+
+Then replay the longest, thirty-four days from trial to comeback:
+
+```bash
+php artisan billing:simulate trial-dunning-cancel-reactivate
+```
+
+```
+  trial-dunning-cancel-reactivate  replayed with no Stripe account
+
+  ok   +0d  trial starts
+      invoice.finalized  200
+      ...
+  ok   +34d  customer fixes their card and resubscribes
+      ...
+
+  Side effects  what the application did
+      mail:replay@example.test  ×9
+      9 outbound delivery(s) blocked. A replay never mails a real customer.
+
+  PASS  All 46 assertions passed.
+```
+
+Each line under a step is a webhook posted through your real route, with the
+status your app returned. The counts depend on your app: the output above
+came from one whose dunning listener sends mail.
+
+**Side effects** are what your app tried to do to the outside world. Replay
+records each one and refuses to deliver it, so your listeners really run and
+nothing reaches a customer. The replay also rolls back every database write
+it caused, including the billable it created.
+
+In a terminal `ok` is a green `✓`; in a CI log it prints as the word.
+
+## Add it to CI
+
+Add one step to the job that already runs your tests, after dependencies are
+installed and the database is migrated:
+
+```yaml
+      - name: Replay billing scenarios
+        env:
+          QUEUE_CONNECTION: sync
+        run: php artisan billing:simulate trial-dunning-cancel-reactivate --json=build/billing.json
+```
+
+A replay that disagrees with its fixture exits non-zero, so the step fails the
+build on its own. `--json` also writes the result as a machine-readable report;
+the directory is created if it doesn't exist. The step needs no Stripe secret,
+because replay never reads a key, so it runs the same on pull requests from forks.
+
+`QUEUE_CONNECTION=sync` matters if your dunning work is queued. A job pushed to
+Redis, SQS or another out-of-process queue survives the replay's rollback, and a
+worker would run it later against data that no longer exists. With `sync` it
+runs inline, and its mail is caught like any other side effect.
+
+Each scenario is its own command. Add a line per scenario, each with its own
+`--json` path.
+
+## Entitlements
+
+A passing replay so far proves your webhooks returned 200. The more useful
+question is what your app let the customer do afterwards. An **entitlement**
+is one answer to that, such as access to teams or a project limit. What a plan
+grants is your product's decision, so the package ships no implementation:
+register a resolver that reports your app's entitlements for a billable.
+
+```php
+CashierDunning::resolveEntitlementsUsing(fn (User $user) => [
+    'teams'    => $user->subscribed('default'),
+    'projects' => $user->subscribed('default') ? 10 : 0,
+]);
+```
+
+Each fixture step records the entitlements Stripe's state should produce, and
+the replay compares your app's against them. The resolver is called once after
+every webhook, not once per step, so `--explain` can name the event that moved
+each one:
+
+```bash
+php artisan billing:simulate trial-dunning-cancel-reactivate --explain
+```
+
+```
+  ok   +31d  retries exhausted, subscription cancelled
+      invoice.payment_failed  200
+        api: true -> false (at invoice.payment_failed)
+        projects: 10 -> 0 (at invoice.payment_failed)
+        teams: true -> false (at invoice.payment_failed)
+      customer.subscription.deleted  200
+```
+
+That is the difference between "your users lost access" and "your users lost
+access before Stripe cancelled anything".
+
+<details>
+<summary>The full thirty-four-day run</summary>
 
 ```
 $ php artisan billing:simulate trial-dunning-cancel-reactivate --explain
@@ -74,205 +214,17 @@ $ php artisan billing:simulate trial-dunning-cancel-reactivate --explain
   PASS  All 46 assertions passed.
 ```
 
-*(Captured from a real run. In a terminal the `ok` column is a green `✓`;
-piped to a file or a CI log it degrades to words, which is what you see here.)*
+</details>
 
-Thirty-four days of billing. No Stripe account. Sub-second.
+Registering nothing is fine: replays still run, and subscription status and
+webhook handling are worth watching before any entitlements exist. To configure
+a resolver without a closure, publish the config with
+`php artisan vendor:publish --tag=cashier-dunning-config` and set
+`entitlements.resolver` to a class implementing
+`Impruthvi\CashierDunning\Contracts\EntitlementResolver`. A closure can't go
+in the config file, because `config:cache` can't serialise one.
 
-## The part live Stripe cannot test
-
-Stripe guarantees **at-least-once delivery** and does not guarantee order.
-Almost nobody tests against either. Redelivery you *can* provoke by hand — the
-Dashboard has a resend button per event under **Developers > Webhooks**, and
-`stripe events resend <id>` does it from the CLI. Both need a live account, a
-network round trip, and an event that already happened, which makes them a
-manual step rather than an assertion. Ordering you cannot provoke at all:
-Stripe offers no way to ask for a step's events in a different sequence. A
-fixture is a list you own, so replay does both — offline, seeded, in CI.
-
-**What this actually does, precisely:** a fixture step is one position on the
-clock — the events Stripe emitted at effectively the same moment. `--shuffle`
-permutes the events *within* a step. `--duplicate` delivers every event a second
-time, appended after the originals, the way a Stripe redelivery arrives. Both
-are seeded, so a failing pass reproduces exactly.
-
-**What it does not do:** move an event across a step boundary. Stripe's own
-documentation offers "a subscription might be deleted before the corresponding
-creation event arrives" as the extreme case, and this package cannot produce
-that ordering — in the shipped fixture `customer.subscription.created` is at
-step 0 and `customer.subscription.deleted` is at step 5, six clock positions
-apart, and the orderer never crosses that gap. Reordering across a clock advance
-is a real design question about which orderings are physically possible, and it
-is not answered here.
-
-Within a step is where the ordering bugs actually live. Step 2 of the shipped
-fixture delivers `invoice.created`, two `customer.subscription.updated` and
-`invoice.payment_failed` at one timestamp; nothing about Stripe's contract says
-which lands first, and an application that only works in the recorded sequence
-is broken:
-
-```
-$ php artisan billing:simulate trial-dunning-cancel-reactivate --duplicate --seed=7 --iterations=1
-
-  (the ordered pass runs first and prints its own timeline, then:)
-
-  Chaos  same events, orders Stripe is entitled to use
-
-  ok    pass 0: in order
-  FAIL  pass 1: duplicated
-        [mail:replay@example.test] happened 9 time(s) in order and 18 time(s) duplicated
-
-  FAIL  1 ordering(s) changed the outcome. Reproduce with --seed=7.
-```
-
-That application ends the run with a **perfectly correct subscription row**. Its
-only defect is that it would have emailed the customer twice for each of nine
-failed payments — which is why comparing final state, the thing most billing test
-suites do, would call it idempotent. No mail left the building: replay records
-the attempt and refuses the delivery.
-
-## Installation
-
-```bash
-composer require impruthvi/cashier-dunning --dev
-```
-
-Requires PHP 8.3+, Laravel 12 or 13, and `laravel/cashier` 16.
-
-Laravel 11 was supported through v0.2.x. It no longer receives security fixes,
-and current Composer refuses to install any 11.x release, so it can no longer be
-tested. Applications still on Laravel 11 can stay on v0.2.
-
-## Getting started
-
-Replay a shipped scenario immediately — nothing to configure, nothing to record:
-
-```bash
-php artisan billing:simulate trial-dunning-cancel-reactivate
-```
-
-The package needs to know which model the billing belongs to. In a service
-provider:
-
-```php
-use Impruthvi\CashierDunning\CashierDunning;
-
-CashierDunning::createBillableUsing(fn () => User::factory()->create([
-    'stripe_id' => 'cus_replay1',
-    'email' => 'replay@example.test',
-]));
-```
-
-Pin the email too, not only the `stripe_id`. Side effects are keyed by recipient,
-so a factory leaving the email to Faker gives every chaos pass a different
-address and turns every comparison into a divergence that is really just a
-different random string.
-
-Before delivering any webhook, the command reads the customer id out of the
-recording and checks that it resolves to exactly the record your factory
-returned. Each way that can go wrong gets its own error — no `stripe_id`, the
-wrong one, no matching row at all, or several rows sharing it — so you are told
-what is actually broken instead of shown a red entitlement table.
-
-Each replay rolls back its database writes, including the factory-created user,
-on success or failure. Repeated commands start from the same database state;
-transactions already open before replay remain open.
-
-Isolation covers two connections: the one Cashier's configured customer model
-uses (`Cashier::useCustomerModel(...)`), and your application's default
-connection. When they are the same connection it is wrapped once. Writes to any
-other connection are not isolated and persist after the replay.
-Application code that commits either of the simulation's transactions is
-detected and fails the run rather than silently persisting. With `--record`,
-local verification writes roll back, but resources created in the Stripe test
-account remain there.
-
-### A replay does not mail your customers
-
-Replay posts a real `invoice.payment_failed` through your real webhook route, so
-your real dunning listener runs — and a dunning listener's whole job is to email
-the customer. On a machine with working SMTP credentials that email would be
-sent, to whatever address your billable carries.
-
-So the run is real right up to the last hop. Your listener runs, the mailable is
-built, the recipients are resolved, the attempt is recorded — and the delivery is
-refused. Every replay prints what your application tried to do:
-
-```
-$ php artisan billing:simulate trial-dunning-cancel-reactivate
-
-  (timeline omitted — see above)
-
-  Side effects  what the application did
-      mail:replay@example.test  ×9
-      9 outbound delivery(s) blocked. A replay never mails a real customer.
-
-  PASS  All 46 assertions passed.
-```
-
-This is deliberately not `Mail::fake()`. A fake swaps the mailer out, so a
-listener that formats a message wrongly never formats it at all — and the bug you
-came to find stops being reachable. Instead, every configured mailer is pointed
-at the array transport for the length of the run. Your listener runs, your
-`toMail()` runs, the message is built and the recipients resolved; it simply has
-nowhere to go. `MessageSending` still fires, so the ledger sees the attempt.
-
-Notifications go the same way. Only channels with no mail transport behind them —
-Slack, SMS, and anything else that talks straight to a network — are refused
-outright, because there is no lower seam to stop them at.
-
-**The limit — queued work is observed, not blocked.** `JobQueued` fires *after*
-Laravel has already pushed the job, so there is nothing left to refuse. On a
-`database` queue whose connection is the billable's or the default one, the row
-is inside a replay transaction and disappears with it. On a `database` queue on
-any other connection, or on Redis, SQS or Beanstalk, the job survives the
-rollback and a worker will run it afterwards, against data that no longer
-exists. **If your dunning work is queued, run replays with
-`QUEUE_CONNECTION=sync`** — then the handler runs inline and its mail is caught
-like any other.
-
-**If your application commits.** A replay owns the transactions it opened on
-the billable's connection and the default connection. Code that calls
-`DB::commit()` or `DB::rollBack()` on either connection takes that transaction
-away, and the rollback afterwards becomes a no-op that leaves real rows behind. The run
-now checks and fails with a named error rather than reporting PASS over
-persisted data.
-
-Laravel work scheduled with `->afterCommit()` cannot execute inside a replay
-that never commits. The command detects those callbacks and exits with a named
-failure instead of reporting that unseen side effects behaved correctly.
-
-### Entitlements
-
-The interesting question is not what Stripe did — it is what your application
-let the customer do afterwards. That is a product decision no billing library
-can answer, so this package ships a contract and no implementation:
-
-```php
-CashierDunning::resolveEntitlementsUsing(function (User $user) {
-    $subscription = $user->subscription('default');
-
-    return [
-        'teams'    => $user->subscribed('default'),
-        'projects' => $user->subscribed('default') ? 10 : 0,
-    ];
-});
-```
-
-The resolver is called **once after every webhook**, not once per step, so
-`--explain` can name the event that moved an entitlement:
-
-```
-teams: true -> false (at invoice.payment_failed)
-```
-
-That is the difference between "your users lost access" and "your users lost
-access three days before Stripe cancelled anything."
-
-Registering nothing is fine. Subscription status and webhook handling are worth
-watching before any entitlements exist.
-
-### When a replay disagrees with the recording
+## When a replay disagrees with the fixture
 
 ```
 $ php artisan billing:simulate downgrade-over-usage-limit
@@ -294,19 +246,116 @@ $ php artisan billing:simulate downgrade-over-usage-limit
   FAIL  1 step(s) did not match the recording, starting at step 0 (subscribed to the larger plan).
 ```
 
-Every webhook returned 200. The subscription row is correct. The application
-simply grants 10 projects on a plan the recording says is worth 25 — a limit
-that drifted out of step with billing, which no amount of checking HTTP status
-codes would surface. The command exits non-zero.
+Every webhook returned 200 and the subscription row is correct. The app grants
+10 projects on a plan the fixture says is worth 25: a limit that drifted out of
+step with billing, which no check of HTTP status codes would catch. The command
+exits non-zero, so in CI this is a red build.
 
-Every declared feature is shown, not only the differing ones — a single red line
-reads as a glitch, while the same line among green ones reads as "everything
-else held, this one moved."
+Every entitlement is shown, not only the ones that differ. A single red line
+reads as a glitch; the same line among green ones reads as "everything else
+held, this one moved."
+
+## Replaying out of order
+
+Stripe delivers webhooks at least once and promises no order. Live Stripe can't
+test either on demand: redelivery is a manual resend from the Dashboard or
+`stripe events resend <id>`, and there is no way to ask for a different order at
+all. A fixture is a list you own, so a replay can do both, offline and in CI.
+
+A fixture step is one position on the clock: the events Stripe emitted at
+effectively the same moment. Two flags reorder them:
+
+- `--shuffle` permutes the events within each step.
+- `--duplicate` delivers every event a second time, after the originals, the way
+  a Stripe redelivery arrives.
+
+```bash
+php artisan billing:simulate trial-dunning-cancel-reactivate --shuffle --duplicate
+```
+
+The in-order replay runs first. Each chaos pass then replays the same fixture in
+a new order and compares what happened with the in-order replay, side effects
+included. `--iterations` sets how many passes (default 4). Without `--seed`
+each run picks a new seed; a failure prints the one to reproduce it with.
+
+```
+$ php artisan billing:simulate trial-dunning-cancel-reactivate --duplicate --seed=7 --iterations=1
+
+  (the ordered pass runs first and prints its own timeline, then:)
+
+  Chaos  same events, orders Stripe is entitled to use
+
+  ok    pass 0: in order
+  FAIL  pass 1: duplicated
+        [mail:replay@example.test] happened 9 time(s) in order and 18 time(s) duplicated
+
+  FAIL  1 ordering(s) changed the outcome. Reproduce with --seed=7.
+```
+
+That app ends the run with a correct subscription row. Its only defect is that
+it would have emailed the customer twice for each of nine failed payments, which
+is why comparing final state, the check most billing test suites make, calls it
+idempotent. This is also why the billable's email has to be pinned: side effects
+are compared by recipient, and a random address would differ on every pass.
+
+> [!NOTE]
+> Reordering stays within a step; it never moves an event across a clock
+> advance. Stripe's own extreme case, a subscription deleted before its creation
+> event arrives, is out of reach: in the shipped fixture those two events are
+> five steps apart.
+
+## Isolation and its limits
+
+**Isolation** is the guarantee that a replay leaves no trace: its database writes
+are rolled back, no outbound delivery reaches anyone, and your real Stripe key
+can't be read. Each part has an edge worth knowing before you trust a green run.
+
+**Database.** A replay wraps two connections in a transaction and rolls both
+back, on success or failure: the one Cashier's customer model uses
+(`Cashier::useCustomerModel(...)`) and your default connection. When they are
+the same connection it is wrapped once. Writes to any other connection are not
+isolated and persist. Transactions already open before the replay remain open.
+
+**Mail and notifications.** This is deliberately not `Mail::fake()`. A fake
+swaps the mailer out, so a listener that builds a message wrongly never builds
+it at all, and the bug you came to find is unreachable. Instead every configured
+mailer points at the array transport for the length of the run: your listener
+and your `toMail()` run, the message is built and its recipients resolved, and
+it has nowhere to go. `MessageSending` still fires, so the side effect is
+recorded. Notification channels with no mail transport behind them, such as
+Slack or SMS, are refused outright.
+
+**Queued jobs are observed, not blocked.** `JobQueued` fires after Laravel has
+already pushed the job, so there is nothing left to refuse. A `database` queue
+on the billable's connection or the default connection rolls back with the
+replay. Any other queue (a `database` queue on another connection, Redis, SQS,
+Beanstalk) keeps the job, and a worker runs it later against data that no longer
+exists. Run replays with `QUEUE_CONNECTION=sync` if your dunning work is queued.
+
+**Your code can't commit its way out.** Code that calls `DB::commit()` or
+`DB::rollBack()` on either replay connection takes the replay's transaction
+away, and the rollback afterwards would leave real rows behind. The replay
+detects this and fails with a named error instead of reporting PASS. Work
+scheduled with `->afterCommit()` can't run inside a replay that never commits,
+so the replay detects those callbacks too and fails rather than report on side
+effects it never saw.
+
+**Your Stripe key.** While a replay runs, your real key is not in configuration
+to be read, so nothing can reach live Stripe by accident.
+
+**The billable is checked before any webhook.** The replay reads the customer id
+from the fixture and checks it resolves to exactly the record your factory
+returned. No `stripe_id`, the wrong one, no matching row, or several rows sharing
+it each get their own error, so you're told what is actually broken instead of
+shown a red entitlement table.
 
 ## Commands
 
 ```bash
-# replay a recorded lifecycle
+# list the scenarios this installation can replay
+php artisan billing:simulate
+
+# replay a scenario
 php artisan billing:simulate <scenario>
 
 # name the event behind every entitlement change
@@ -315,17 +364,19 @@ php artisan billing:simulate <scenario> --explain
 # replay in orders Stripe is entitled to use
 php artisan billing:simulate <scenario> --shuffle --duplicate --seed=7 --iterations=4
 
-# machine-readable report for CI
+# write a machine-readable report for CI
 php artisan billing:simulate <scenario> --json=build/billing.json
 
 # record against your own Stripe test account
 php artisan billing:simulate <scenario> --record
 
-# what can this installation do, offline
+# check what this installation can do, offline
 php artisan billing:doctor
 ```
 
-`billing:doctor` answers "will this work here" without running anything:
+## Check an installation
+
+`billing:doctor` answers "will this work here?" without running anything:
 
 ```
 $ php artisan billing:doctor
@@ -336,7 +387,7 @@ $ php artisan billing:doctor
   ✓ Cashier billable model: App\Models\User
   ! Webhook secret: not set. Cashier skips signature verification, so replay cannot prove your signature handling works.
   ✓ Entitlement resolver: closure registered in code
-  ✓ 2 fixture(s) valid in /app/vendor/impruthvi/cashier-dunning/fixtures
+  ✓ 3 fixture(s) valid in /app/vendor/impruthvi/cashier-dunning/fixtures
   ✓ Scenario [trial-dunning-cancel-reactivate]: recorded.
   ✓ Scenario [downgrade-over-usage-limit]: recorded.
 
@@ -344,96 +395,123 @@ $ php artisan billing:doctor
   Record  blocked: no key configured.
 ```
 
-*(The fixtures path is wherever Composer installed the package; the absolute
-path above is shortened.)*
+The fixture path is wherever Composer installed the package. Only scenarios
+that can be recorded are listed, so the hand-authored
+`cancel-at-period-end-then-canceled-early` has a fixture but no line of its own.
 
-## Recording your own
+## Recording against your own account
 
-Recording drives a real Stripe **test** account through a test clock, then
-replays the result against your application before writing anything — a fixture
-that cannot be replayed is worse than no fixture, because it looks like coverage.
+The shipped fixtures were recorded against a dedicated test account. Dunning
+depends on account settings, such as how often Stripe retries a failed card and
+what it does when retries run out, so your account can produce a different
+lifecycle. Record the scenarios against it:
 
 ```bash
 STRIPE_SECRET=sk_test_... php artisan billing:simulate trial-dunning-cancel-reactivate --record
 ```
 
-**Recording refuses to run against anything but a test key.** The guard is an
-allowlist, not a blocklist: recording proceeds only when the key can be
-positively identified as a test key, so a prefix Stripe introduces next year
-cannot silently become permitted. Recording creates customers, subscriptions and
-invoices and advances a clock through months of billing — against a live key
-that means real charges to real cards, and there is no undo.
+Recording uses a Stripe **test clock**: a clock in test mode that a customer and
+subscription can be attached to and moved forward on demand, so trial ends,
+renewals and retries happen when the clock is advanced rather than when the
+calendar gets there. The recorder creates the customer and subscription on a
+new clock, advances it through each step of the scenario, and writes down the
+webhooks Stripe sends and the API responses it gives.
 
-A recording is replayed through your application before it is written, and only
-one that replays clean becomes a fixture. One that comes up short, cannot be
-turned into a fixture, or does not replay clean is quarantined instead, under
-`quarantine/` in your fixture directory. The artifact holds what arrived and what
-did not. If replay or saving failed, it also holds the fixture that would have
-been written and the replay report when one is available. A refusal before
-replay can start has no replay report.
+The fixture is saved to `tests/fixtures/billing`, or to `fixtures.path` in the
+config. Fixtures there take precedence over the shipped ones of the same name.
+Commit them: they are what lets CI replay without a network.
 
-Saving writes a complete temporary file beside the destination before
-replacing it. A failed attempt leaves any previous fixture untouched; concurrent
-successful saves are last-writer-wins. Quarantines use distinct filenames,
-even for attempts in the same second, and are also saved as complete files.
-If quarantine cannot be saved, the command exits unsuccessfully and reports
-both failures without claiming an artifact or writing to another location.
-Temporary-file cleanup is attempted on failure. This protects against partially
-written files, not power-loss durability.
+**Only a test key will do.** The guard is an allowlist, not a blocklist:
+recording proceeds only when the key can be positively identified as a test
+key, so a prefix Stripe introduces next year can't quietly become permitted.
+Against a live key, recording would mean real charges to real cards.
+
+**A recording has to replay before it is saved.** Each scenario has a
+**manifest**: the events its recording must contain. A recording that is
+missing one, can't be turned into a fixture, or doesn't replay clean through
+your app is not saved. It becomes a **quarantine** under `quarantine/` in your
+fixture directory instead, holding what arrived and what didn't, plus the
+fixture that would have been written and the replay report when there is one.
+A fixture that can't be replayed is worse than none, because it looks like
+coverage.
+
+**Saving never leaves half a file.** A failed save leaves any previous fixture
+untouched. If the quarantine itself can't be saved, the command fails and
+reports both failures rather than claiming one exists.
+
+**Your test account keeps what recording created.** The local verification
+replay rolls back like any other, but the customers, subscriptions and invoices
+recording created stay in your Stripe test account.
 
 ## Scenarios
 
-| Scenario | Story |
-|---|---|
-| `trial-dunning-cancel-reactivate` | A trial ends, the card fails, retries run out, the subscription is cancelled, the customer comes back |
-| `downgrade-over-usage-limit` | A customer moves to a smaller plan mid-period and their limit drops below what they are already using |
-| `cancel-at-period-end-then-canceled-early` | A customer schedules a cancellation, Stripe cancels early, and Cashier keeps reporting the subscription as active |
+| Scenario | Story | Fixture |
+|---|---|---|
+| `trial-dunning-cancel-reactivate` | A trial ends, the card fails, retries run out, the subscription is cancelled, the customer comes back | Recorded |
+| `downgrade-over-usage-limit` | A customer moves to a smaller plan mid-period and their limit drops below what they are already using | Recorded |
+| `cancel-at-period-end-then-canceled-early` | A customer schedules a cancellation, Stripe cancels early, and Cashier keeps reporting the subscription as active | Hand-authored |
 
-The first two fixtures were recorded against a dedicated synthetic Stripe test
-account with invented products, so there is nothing sensitive in them by
-construction. Field-level redaction runs on record against an allowlist that
-fails closed, and saving or loading a fixture refuses one whose events or recorded API
-responses carry a field the allowlist does not permit, whose API exchanges
-match on a request parameter it does not permit, whose match paths hold a
-literal provider id or a query string rather than lowercase words and whole
-id placeholders, or that is missing an event its manifest requires. A field
-of the wrong type, such as a status of `"200"` or an event with no string
-`type`, is refused too, rather than cast.
+The recorded fixtures come from a dedicated test account with invented products,
+so there is nothing sensitive in them by construction.
+`cancel-at-period-end-then-canceled-early` is hand-authored from Stripe's
+documented subscription object instead. It reproduces
+[laravel/cashier-stripe#1791][1791], and the point is to show the defect without
+needing an account to see it. Its provenance says so, and because it has no
+recording behind it, `--record` can't produce it.
 
-Saving and loading also refuse a whole string value that is a recognised literal provider
-id in an event, API response body or match body, including nested lists. Use
-placeholders such as `{{cus_1}}` instead of `cus_RealId`. The refusal names the
-step, payload location and placeholder kind, plus the method and match path for
-an API exchange. This uses the same supported id kinds as recording: unsupported
-prefixes such as `acct_` and `seti_`, ids embedded in longer strings, and fixture
-metadata are outside this rule. Keys remain subject to the field allowlist.
+## What a fixture may contain
 
-`cancel-at-period-end-then-canceled-early` is the exception: it is hand-authored
-from Stripe's documented subscription object rather than recorded, because it
-reproduces [laravel/cashier-stripe#1791][1791] and the point is to show the
-defect without needing an account to see it. Its provenance says so.
+Fixtures are committed, often to a public repository, so their contents are
+restricted by an **allowlist** of permitted fields. Recording drops anything
+the allowlist doesn't permit; saving or loading refuses it.
+
+A fixture holds no real Stripe ids. Each is a **placeholder**, such as
+`{{cus_1}}`, and points on the timeline are placeholders too, such as
+`{{t+14d}}`. A replay resolves them to fresh values, which is where
+`cus_replay1` comes from.
+
+Each Stripe call your app made during recording is kept as an **API exchange**:
+the request and the response Stripe gave. A replay answers a call only from an
+exchange in the current step, matched on its **match path**, such as
+`/v1/subscriptions/{{sub_1}}`, and on any request parameters in its
+**match body**.
+
+Saving or loading refuses a fixture that:
+
+- carries a field in an event or API response that the allowlist doesn't permit
+- has an API exchange whose match body uses a parameter the allowlist doesn't permit
+- has a match path with a literal provider id or a query string, rather than
+  lowercase words and whole placeholders
+- is missing an event its manifest requires
+- has a field of the wrong type, such as a status of `"200"` or an event with no
+  string `type`, rather than casting it
+- holds a recognised literal provider id as a whole string value in an event,
+  API response body or match body, nested lists included
+
+The refusal names the step, the location in the payload and the placeholder kind
+to use, plus the method and match path for an API exchange. The literal-id rule
+covers the same id kinds recording does: unsupported prefixes such as `acct_`
+and `seti_`, ids embedded in longer strings, and fixture metadata are outside it.
 
 ## How it works
 
-Cashier's Stripe calls do not go through Laravel's HTTP client, so `Http::fake()`
-cannot see them. Replay installs a transport into the Stripe SDK's own seam
-(`ApiRequestor::setHttpClient`) and answers from the fixture. Webhooks are signed
-with a real HMAC against an ephemeral secret and posted through your HTTP kernel,
-so routing, middleware and Cashier's signature verification all run exactly as
-they do in production.
-
-While a replay is running, your real Stripe key is not in configuration to be
-read. Nothing can reach live Stripe by accident.
+Cashier's Stripe calls don't go through Laravel's HTTP client, so `Http::fake()`
+can't see them. A replay installs a transport in the Stripe SDK's own seam
+(`ApiRequestor::setHttpClient`) and answers each call from the fixture's API
+exchanges. Webhooks are signed with a real HMAC against a throwaway secret and
+posted through your HTTP kernel, so routing, middleware and Cashier's signature
+verification all run as they would in production with a webhook secret
+configured.
 
 Two rules keep a replay honest:
 
 - **Nothing is invented.** A Stripe call with no recorded response is an error
   naming the call and the step, never an empty body.
-- **Nothing is served out of time.** Responses are scoped to the step that
-  recorded them, so a subscription that was `trialing` at step 1 cannot answer
-  for step 3 where it is `past_due`.
+- **Nothing is served out of time.** Responses belong to the step that recorded
+  them, so a subscription that was `trialing` at step 1 can't answer for step 3,
+  where it is `past_due`.
 
-And a run that asserted nothing cannot pass. A green billing test that proves
+And a replay that asserted nothing can't pass. A green billing test that proves
 nothing is worse than no test, because it stops anyone looking.
 
 ## Testing
@@ -450,8 +528,8 @@ project wants.
 ## Contributing
 
 Fixtures are reviewed as diffs, so the format is deliberately stable: ids and
-timestamps are normalised to placeholders, key order is fixed, and encoding is
-pinned. A re-recording of the same journey should produce identical bytes.
+timestamps are stored as placeholders, key order is fixed, and encoding is
+pinned. A re-recording of the same scenario should produce identical bytes.
 
 ## Credits
 
