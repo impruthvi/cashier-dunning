@@ -5,8 +5,10 @@ namespace Impruthvi\CashierDunning\Record;
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Allowlist;
 use Impruthvi\CashierDunning\Fixtures\ApiExchange;
+use Impruthvi\CashierDunning\Fixtures\Exceptions\IncompleteFixture;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
+use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\Normalizer;
 use Impruthvi\CashierDunning\Fixtures\Provider;
 use Impruthvi\CashierDunning\Fixtures\Step;
@@ -26,13 +28,13 @@ use Throwable;
  *
  * Create a test clock, put a customer on it, subscribe with a card that will
  * fail, then walk the scenario: advance the clock to each offset, wait for
- * Stripe to finish reacting, and collect what it emitted. At the end, check the
- * manifest, and only then build a fixture.
+ * Stripe to finish reacting, and collect what it emitted. At the end, build a
+ * fixture and put it through the rules a saved fixture is loaded by.
  *
- * The order matters. A recording is checked for completeness *before* it becomes
- * a fixture, because a short recording is wrong in a way nothing downstream can
- * detect: it replays green, and the drift job compares it against another short
- * recording and agrees.
+ * The order matters. A recording is checked, completeness included, *before*
+ * anything replays it, because a short recording is wrong in a way nothing
+ * downstream can detect: it replays green, and the drift job compares it
+ * against another short recording and agrees.
  *
  * Everything captured is normalised and passed through the allowlist on the way
  * out. Fixtures are published, so redaction happens at the point of writing, not
@@ -116,33 +118,27 @@ final readonly class Recorder
             $clock->delete();
         }
 
-        $types = array_map(
-            static fn (array $event): string => WebhookEvent::type($event) ?? '',
-            $state->captured
-        );
-
-        if (! $scenario->manifest->isSatisfiedBy($types)) {
-            throw RecordingRefused::missingEvents(
-                $scenario->name,
-                $scenario->manifest->missingFrom($types),
-                $state->captured,
-                $startsAt,
-            );
-        }
-
         try {
-            $fixture = new Fixture(
+            // Through the same encode and decode as the file the fixture will
+            // become, so a recording the loader would refuse is refused now,
+            // before a replay, and the replay runs on exactly what would be read
+            // back. The manifest is judged there too: a required event is
+            // declared, so it reaches the fixture whenever it was captured.
+            $fixture = FixtureFile::decode(FixtureFile::encode(new Fixture(
                 provider: Provider::Stripe,
                 scenario: $scenario->name,
                 provenance: $this->provenance($startsAt, $state),
                 manifest: $scenario->manifest,
                 steps: $steps,
-            );
+            )));
+        } catch (IncompleteFixture $e) {
+            throw RecordingRefused::missingEvents($scenario->name, $e->missing, $state->captured, $startsAt);
         } catch (InvalidFixture $e) {
             // Reachable when the allowlist keeps a string field whose recorded
-            // value happens to contain {{...}}. The clock is gone by now, so
-            // the capture is refused like a short recording: it is the only
-            // record of what Stripe sent.
+            // value happens to contain {{...}}, or the normalizer leaves an id
+            // of a kind it does not know as a literal. The clock is gone by
+            // now, so the capture is refused like a short recording: it is the
+            // only record of what Stripe sent.
             throw RecordingRefused::invalidFixture($scenario->name, $state->captured, $startsAt, $e);
         }
 

@@ -20,10 +20,10 @@ use Impruthvi\CashierDunning\Support\WebhookEvent;
  * Two modes:
  *   apply(), applyToObject()  - used on record. Unlisted fields are dropped,
  *                               not masked.
- *   disallowedPaths(), disallowedPathsInObject() - used on load. Unlisted
+ *   disallowedPaths(), disallowedPathsInObject() - used on save and load. Unlisted
  *                               fields refuse the fixture, because their
  *                               presence means it did not come from apply().
- *   disallowedRequestParameters() - used on load, for the request parameters
+ *   disallowedRequestParameters() - used on save and load, for the request parameters
  *                               an API exchange matches on. The recorder
  *                               always writes an empty match body, so there is
  *                               no drop-on-record mode; a hand-authored match

@@ -17,7 +17,7 @@ The request parameters an API exchange is matched on. A subset match by top-leve
 _Avoid_: Request body, match params
 
 **Match path**:
-The URL path an API exchange is matched on, such as `/v1/subscriptions/{{sub_1}}`. Every exchange has one. Each segment is either a lowercase literal word or a whole provider-id placeholder, never a literal provider id, and the path has no query string; request parameters belong in the match body. A fixture whose match path breaks this is refused when loaded.
+The URL path an API exchange is matched on, such as `/v1/subscriptions/{{sub_1}}`. Every exchange has one. Each segment is either a lowercase literal word or a whole provider-id placeholder, never a literal provider id, and the path has no query string; request parameters belong in the match body. A fixture whose match path breaks this is refused when saved or loaded.
 _Avoid_: URL, endpoint, route
 
 **Placeholder**:
@@ -45,11 +45,11 @@ Something the application tried to do to the outside world during a replay, such
 _Avoid_: Outbound, delivery
 
 **Allowlist**:
-The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is loaded. Fixtures are committed to a public repository, which is why the allowlist exists.
+The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is saved or loaded. Fixtures are committed to a public repository, which is why the allowlist exists.
 _Avoid_: Redaction list, denylist, publish (for saving a file)
 
 **Manifest**:
-The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when loaded.
+The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when saved or loaded.
 _Avoid_: Expected events, checklist
 
 **Quarantine**:

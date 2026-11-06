@@ -212,6 +212,26 @@ it('quarantines a recording whose allowlisted text cannot be read back as a fixt
     noFixtureIn($this->root);
 });
 
+it('quarantines a recording that would save a match path the loader refuses, before replaying it', function () {
+    // The normalizer leaves an id of a kind it does not know unchanged, so the
+    // subscription-state exchange is recorded with a literal path segment. Saved,
+    // it would be refused on its first load, after the Stripe quota was spent.
+    $script = recordingScript([subscriptionEvent('customer.subscription.created', 'trialing')]);
+    $script['POST /v1/subscriptions']['id'] = 'zzz_1AbC';
+
+    $e = refusedRecording($this->root, $script);
+
+    expect($e->getMessage())->toContain('could not be turned into a fixture')
+        ->and($e->getMessage())->toContain('[zzz_1AbC]')
+        ->and($e->getPrevious())->toBeInstanceOf(InvalidFixture::class)
+        ->and($e->report)->toBeNull()
+        ->and($e->fixture)->toBeNull()
+        ->and($e->artifactPath)->toBe(quarantinesIn($this->root)[0])
+        ->and(onlyQuarantineIn($this->root))->not->toHaveKey('replay');
+
+    noFixtureIn($this->root);
+});
+
 it('quarantines a recording the application could not replay, with the replay and the fixture', function () {
     // The capture cost real quota and the clock is gone. A replay that fails
     // here is the case where the diagnosis lives in the replay, not the capture.

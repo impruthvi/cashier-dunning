@@ -1,6 +1,7 @@
 <?php
 
 use Impruthvi\CashierDunning\Fixtures\Exceptions\DisallowedField;
+use Impruthvi\CashierDunning\Fixtures\Exceptions\IncompleteFixture;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
@@ -574,4 +575,59 @@ it('does not scan fixture metadata or keys for literal provider ids', function (
         ->and($fixture->provenance)->toBe(['cus_RealId' => 'cus_RealId'])
         ->and($fixture->steps[0]->label)->toBe('evt_RealId')
         ->and($fixture->steps[0]->entitlements)->toBe(['price_RealId' => 'prod_RealId']);
+});
+
+it('refuses to save what it would refuse to load, leaving the previous file untouched', function (string $json, string $exception, string $message) {
+    // Fixture::fromArray skips the load-time rules, so this is a fixture the
+    // constructor accepts and the loader would refuse: the kind a recorder
+    // could build if normalising and the rules ever disagreed.
+    $fixture = Fixture::fromArray(json_decode($json, false, 512, JSON_THROW_ON_ERROR));
+    $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cd-write-'.uniqid().'.json';
+    file_put_contents($path, 'previous');
+
+    try {
+        expect(fn () => FixtureFile::write($fixture, $path))->toThrow($exception, $message)
+            ->and(file_get_contents($path))->toBe('previous');
+    } finally {
+        unlink($path);
+    }
+})->with([
+    'a field the allowlist does not permit' => [
+        json_encode(minimalFixtureArray(['steps' => [[
+            'advance_to' => '0d',
+            'label' => 'start',
+            'events' => [[
+                'id' => '{{evt_1}}',
+                'type' => 'customer.subscription.created',
+                'data' => ['object' => ['id' => '{{sub_1}}', 'customer_email' => 'someone@example.com']],
+            ]],
+        ]]])),
+        DisallowedField::class,
+        'data.object.customer_email',
+    ],
+    'a literal provider id in a match path' => [
+        fixtureWithExchangePath(['method' => 'GET', 'path' => '/v1/subscriptions/sub_1AbC']),
+        InvalidFixture::class,
+        'has the literal provider id [sub_1AbC]',
+    ],
+    'a required event that never arrived' => [
+        json_encode(minimalFixtureArray(['manifest' => [
+            'required_events' => ['customer.subscription.created', 'invoice.payment_failed'],
+            'optional_events' => [],
+        ]])),
+        IncompleteFixture::class,
+        'invoice.payment_failed',
+    ],
+]);
+
+it('says which required events a refused fixture never received', function () {
+    try {
+        FixtureFile::decode(json_encode(minimalFixtureArray(['manifest' => [
+            'required_events' => ['customer.subscription.created', 'invoice.payment_failed', 'invoice.paid'],
+            'optional_events' => [],
+        ]])));
+        $this->fail('Expected the fixture to be refused.');
+    } catch (IncompleteFixture $e) {
+        expect($e->missing)->toBe(['invoice.payment_failed', 'invoice.paid']);
+    }
 });

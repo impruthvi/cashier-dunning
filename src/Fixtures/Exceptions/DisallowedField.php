@@ -8,9 +8,9 @@ use Impruthvi\CashierDunning\Fixtures\ApiExchange;
  * Raised when a fixture carries a field the allowlist does not permit.
  *
  * Fixtures are published to a public repository. The allowlist fails closed:
- * on write, unlisted fields are dropped; on load, their presence refuses the
- * fixture, because a fixture containing them was not produced by this
- * package's writer and has not been through redaction.
+ * on record, unlisted fields are dropped; on save or load, their presence
+ * refuses the fixture, because a fixture containing them has not been through
+ * redaction.
  */
 class DisallowedField extends InvalidFixture
 {

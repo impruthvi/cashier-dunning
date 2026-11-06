@@ -33,8 +33,9 @@ final class FixtureFile
     }
 
     /**
-     * Loading is where a fixture is refused, so every reader meets the same
-     * rules: replay, doctor, and anything else that reads a file. A fixture is
+     * Decoding is where a fixture is refused, so every reader meets the same
+     * rules: replay, doctor, and anything else that reads a file, and so does
+     * {@see write()}, which decodes what it is about to save. A fixture is
      * refused when an event or a recorded API response carries a field the
      * allowlist does not permit, when an API exchange matches on a request
      * parameter it does not permit, when a match path is missing or breaks its
@@ -143,8 +144,19 @@ final class FixtureFile
         return $reindented."\n";
     }
 
+    /**
+     * Writes only what {@see read()} would load back. The encoded bytes go
+     * through the same decode a reader uses, so a fixture the rules refuse is
+     * refused here, before it replaces anything already at the path.
+     *
+     * @throws InvalidFixture
+     */
     public static function write(Fixture $fixture, string $path): void
     {
-        AtomicFile::write($path, self::encode($fixture));
+        $json = self::encode($fixture);
+
+        self::decode($json);
+
+        AtomicFile::write($path, $json);
     }
 }
