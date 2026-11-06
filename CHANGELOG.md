@@ -2,6 +2,31 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## v0.6.0 - 2026-11-06
+
+This release lets a fixture hold a recorded Stripe error response, such as a card decline, and makes every `Fixture` object obey the fixture rules, which breaks the PHP API for consumers who build `Fixture` objects directly.
+
+**User-Facing Fixes**
+
+- A fixture can now hold a recorded Stripe error response, such as a 402 card decline, and still be saved and loaded. It replays as the matching Stripe exception (`CardException`, "Your card was declined."). Before, the allowlist refused the response body because its `error` field was not permitted. The allowlist now permits `error.type`, `code`, `decline_code`, `message` and `param` on an error body. A value in `error.type`, `code` or `decline_code` that has the shape of Stripe's vocabulary, such as `card_declined`, is not mistaken for a literal ID. An actual ID such as `card_1AbC23` is still refused in every field of the error.
+
+**Breaking PHP API Changes And Migration**
+
+- **`Fixture`'s constructor now refuses content it used to accept.** It runs every rule a fixture loaded from a file meets: at least one step, recognised placeholders, the allowlist on events, match bodies and response bodies, no literal provider IDs, a well-formed match path, and every required event its manifest declares. So a `Fixture` that exists can always be saved and loaded. The exception classes and messages are unchanged.
+  Migration: code that builds a `Fixture` with `new Fixture(...)` or `Fixture::fromArray()` should expect `InvalidFixture` (including `DisallowedField` and `IncompleteFixture`) where it used to get an object back. `FixtureFile::write()` no longer decodes what it saves, because the constructor has already refused anything `FixtureFile::read()` would refuse.
+- **`Fixture::satisfiesManifest()` and `Fixture::missingRequiredEvents()` are removed.** A `Fixture` always satisfies its manifest now.
+  Migration: catch `IncompleteFixture` when building a fixture and read `$e->missing`, or ask the manifest directly with `$fixture->manifest->missingFrom($fixture->eventTypes())`.
+- **`InvalidFixture::missingMatchPath()` takes the exchange's method as a string** instead of an `ApiExchange`, because decoding now refuses an absent match path before an exchange exists. Its message is unchanged.
+  Migration: pass `$exchange->method` instead of `$exchange`.
+- **`ApiExchange::fromDecoded()` takes the step number as a second argument**, so that it can refuse a missing match path and name the step. Its first argument is the internal `DecodedObject`, so the method was never usable from outside the package.
+  Migration: none expected. Load fixtures with `FixtureFile::read()` or `Fixture::fromArray()`.
+
+**Requirements And Verification**
+
+Requirements remain PHP 8.3+, Laravel 12 or 13, Cashier 16, and Stripe PHP 17.4–21 within the declared Composer constraints. Fixture format version remains **1**, and the shipped fixtures are unchanged.
+
+Local checks pass, and the breaks above were checked against `roave-backward-compatibility-check --from=v0.5.0`. **Two live Stripe recording tests remain skipped without a test key. This release has not been freshly verified against a live Stripe test account.**
+
 ## v0.5.0 - 2026-11-06
 
 This release checks a recording against the fixture rules before it is saved, and reshapes recording refusals, which breaks the PHP API for consumers who use `RecordingRefused` and the quarantine classes directly.
@@ -215,6 +240,7 @@ new billable preflight will refuse to run until it is gone:
 ```
 The billable factory created [App\Models\User] with stripe_id [cus_replay1],
 but Cashier::findBillable() returned a different record.
+
 
 
 
