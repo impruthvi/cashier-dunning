@@ -493,6 +493,11 @@ to use, plus the method and match path for an API exchange. The literal-id rule
 covers the same id kinds recording does: unsupported prefixes such as `acct_`
 and `seti_`, ids embedded in longer strings, and fixture metadata are outside it.
 
+A recorded Stripe error, such as the 402 of a card decline, is an API response
+too. Its `error` may hold `type`, `code`, `decline_code`, `message` and `param`,
+and nothing else. Stripe's own codes in the first three, such as `card_declined`,
+aren't read as ids, but a real id there, such as `card_1AbC23`, is refused.
+
 ## How it works
 
 Cashier's Stripe calls don't go through Laravel's HTTP client, so `Http::fake()`

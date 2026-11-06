@@ -23,6 +23,18 @@ final class FixtureFile
         | JSON_UNESCAPED_UNICODE
         | JSON_THROW_ON_ERROR;
 
+    /**
+     * What a value at one of {@see Allowlist::vocabularyPathsIn()} must look
+     * like to be exempt from the literal-id rule: lowercase words joined by
+     * underscores, as `card_declined` is. A real id such as `card_1AbC23` in
+     * the same place is still refused.
+     *
+     * The rule is narrowed here rather than in kindOf() because kindOf() also
+     * decides what the recorder replaces, and real Stripe ids can be all
+     * lowercase words, such as a custom price id `price_monthly`.
+     */
+    private const VOCABULARY_WORD = '/^[a-z]+(?:_[a-z]+)*$/';
+
     public static function read(string $path): Fixture
     {
         if (! is_file($path)) {
@@ -104,7 +116,12 @@ final class FixtureFile
                     throw DisallowedField::inApiResponse($index, $exchange, $offending);
                 }
 
-                self::refuseLiteralIds($exchange->responseBody, $index, "the response body of [{$exchange->method} {$exchange->path}]");
+                self::refuseLiteralIds(
+                    $exchange->responseBody,
+                    $index,
+                    "the response body of [{$exchange->method} {$exchange->path}]",
+                    vocabularyPaths: $allowlist->vocabularyPathsIn($exchange->responseBody),
+                );
             }
         }
 
@@ -115,14 +132,19 @@ final class FixtureFile
         return $fixture;
     }
 
-    /** @param array<array-key, mixed> $payload */
-    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = ''): void
+    /**
+     * @param  array<array-key, mixed>  $payload
+     * @param  list<string>  $vocabularyPaths  paths where Stripe's own vocabulary is not read as an id
+     */
+    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = '', array $vocabularyPaths = []): void
     {
         foreach ($payload as $key => $value) {
             $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
 
             if (is_array($value)) {
-                self::refuseLiteralIds($value, $step, $where, $path);
+                self::refuseLiteralIds($value, $step, $where, $path, $vocabularyPaths);
+            } elseif (is_string($value) && in_array($path, $vocabularyPaths, true) && preg_match(self::VOCABULARY_WORD, $value) === 1) {
+                continue;
             } elseif (is_string($value) && ($kind = Placeholder::kindOf($value)) !== null) {
                 throw InvalidFixture::literalProviderId($step, $where, $path, $kind);
             }
