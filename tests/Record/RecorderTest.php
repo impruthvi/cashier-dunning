@@ -2,8 +2,15 @@
 
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
-use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Record\Recorder;
+use Impruthvi\CashierDunning\Record\RecordingAttempt;
+use Impruthvi\CashierDunning\Record\Refusal;
+
+/** @param list<string> $required */
+function attemptFor(array $required): RecordingAttempt
+{
+    return new RecordingAttempt(twoStepScenario($required), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+}
 
 it('records a scenario into a fixture', function () {
     [$stripe, $fake, $restore] = scriptedStripe(recordingScript([
@@ -11,8 +18,9 @@ it('records a scenario into a fixture', function () {
         subscriptionEvent('customer.subscription.updated', 'past_due'),
     ]));
 
-    ['fixture' => $fixture, 'captured' => $captured] = (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record($attempt = attemptFor(['customer.subscription.created']));
+    $captured = $attempt->captured;
 
     expect($fixture->scenario)->toBe('test-scenario')
         ->and($fixture->steps)->toHaveCount(2)
@@ -33,8 +41,8 @@ it('normalises ids so two recordings of the same journey match', function () {
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record(attemptFor(['customer.subscription.created']));
 
     expect($fixture->steps[0]->events[0]['data']['object']['id'])->toBe('{{sub_1}}')
         ->and($fixture->steps[0]->events[0]['data']['object']['customer'])->toBe('{{cus_1}}');
@@ -48,8 +56,8 @@ it('redacts on the way out rather than as a review step somebody forgets', funct
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record(attemptFor(['customer.subscription.created']));
 
     $object = $fixture->steps[0]->events[0]['data']['object'];
 
@@ -65,8 +73,8 @@ it('records the subscription state at each step so replay cannot answer out of t
         subscriptionEvent('customer.subscription.created', 'trialing'),
     ]));
 
-    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record(attemptFor(['customer.subscription.created']));
 
     expect($fixture->steps[0]->apiExchanges)->toHaveCount(1)
         ->and($fixture->steps[0]->apiExchanges[0]->path)->toBe('/v1/subscriptions/{{sub_1}}')
@@ -83,15 +91,12 @@ it('refuses to write a fixture when a required event never arrived', function ()
     ]));
 
     try {
-        (new Recorder($stripe, eventTimeoutSeconds: 0))->record(
-            twoStepScenario(['customer.subscription.created', 'invoice.payment_failed']),
-            CarbonImmutable::parse('2026-01-01T00:00:00Z')
-        );
+        (new Recorder($stripe, eventTimeoutSeconds: 0))->record($attempt = attemptFor(['customer.subscription.created', 'invoice.payment_failed']));
         $this->fail('Expected the recording to be refused.');
-    } catch (RecordingRefused $e) {
-        expect($e->getMessage())->toContain('No fixture was written')
-            ->and($e->missing)->toBe(['invoice.payment_failed'])
-            ->and($e->captured)->toHaveCount(1);
+    } catch (Refusal $e) {
+        expect($e->outcome)->toBe('is incomplete')
+            ->and($e->reason)->toBe('the recording ended before every required event arrived')
+            ->and($attempt->captured)->toHaveCount(1);
     }
 
     $restore();
@@ -103,11 +108,8 @@ it('deletes the test clock even when the recording fails', function () {
     [$stripe, $fake, $restore] = scriptedStripe(recordingScript([]));
 
     try {
-        (new Recorder($stripe, eventTimeoutSeconds: 0))->record(
-            twoStepScenario(['invoice.payment_failed']),
-            CarbonImmutable::parse('2026-01-01T00:00:00Z')
-        );
-    } catch (RecordingRefused) {
+        (new Recorder($stripe, eventTimeoutSeconds: 0))->record(attemptFor(['invoice.payment_failed']));
+    } catch (Refusal) {
         // expected
     }
 
@@ -122,7 +124,7 @@ it('puts the customer on the clock so its billing can be fast-forwarded', functi
     ]));
 
     (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+        ->record(attemptFor(['customer.subscription.created']));
 
     $restore();
 })->throwsNoExceptions();
@@ -143,8 +145,8 @@ it('gives two different subscriptions two different placeholders', function () {
 
     [$stripe, , $restore] = scriptedStripe($script);
 
-    ['fixture' => $fixture] = (new Recorder($stripe, eventTimeoutSeconds: 0))
-        ->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $fixture = (new Recorder($stripe, eventTimeoutSeconds: 0))
+        ->record(attemptFor(['customer.subscription.created']));
 
     $ids = [];
 
@@ -164,24 +166,20 @@ it('gives two different subscriptions two different placeholders', function () {
 it('refuses a recording whose allowlisted text cannot be read back as a fixture', function () {
     // Stripe can put a literal {{...}} into a string field the allowlist keeps.
     // The fixture refuses it, and the clock is already deleted by then, so the
-    // refusal has to carry the captured events: they are the only record of
+    // attempt has to keep the captured events: they are the only record of
     // what happened. Quarantining them is RecordAndVerify's job.
     [$stripe, , $restore] = scriptedStripe(recordingScript([
         subscriptionEvent('customer.subscription.created', '{{bad}}'),
     ]));
 
     try {
-        (new Recorder($stripe, eventTimeoutSeconds: 0))->record(
-            twoStepScenario(['customer.subscription.created']),
-            CarbonImmutable::parse('2026-01-01T00:00:00Z')
-        );
+        (new Recorder($stripe, eventTimeoutSeconds: 0))->record($attempt = attemptFor(['customer.subscription.created']));
         $this->fail('Expected the recording to be refused.');
-    } catch (RecordingRefused $e) {
+    } catch (Refusal $e) {
         expect($e->getMessage())->toContain('{{bad}}')
-            ->and($e->getMessage())->toContain('No fixture was written')
+            ->and($e->outcome)->toBe('could not be turned into a fixture')
             ->and($e->getPrevious())->toBeInstanceOf(InvalidFixture::class)
-            ->and($e->captured)->toHaveCount(1)
-            ->and($e->artifactPath)->toBeNull();
+            ->and($attempt->captured)->toHaveCount(1);
     } finally {
         $restore();
     }
@@ -196,18 +194,18 @@ it('starts every recording with nothing captured', function () {
     [$stripe, $fake, $restore] = scriptedStripe($script);
 
     $recorder = new Recorder($stripe, eventTimeoutSeconds: 0);
-    $recorder->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+    $recorder->record(attemptFor(['customer.subscription.created']));
 
     $fake->script['POST /v1/test_helpers/test_clocks']['__headers'] = ['Request-Id' => 'req_second'];
     $fake->script['GET /v1/events'] = ['object' => 'list', 'data' => []];
 
     try {
-        $recorder->record(twoStepScenario(['customer.subscription.created']), CarbonImmutable::parse('2026-01-01T00:00:00Z'));
+        $recorder->record($attempt = attemptFor(['customer.subscription.created']));
         $this->fail('Expected the second recording to be refused.');
-    } catch (RecordingRefused $e) {
-        expect($e->missing)->toBe(['customer.subscription.created'])
-            ->and($e->captured)->toBe([])
-            ->and($e->requestIds)->toBe(['req_second']);
+    } catch (Refusal $e) {
+        expect($e->outcome)->toBe('is incomplete')
+            ->and($attempt->captured)->toBe([])
+            ->and($attempt->requestIds)->toBe(['req_second']);
     } finally {
         $restore();
     }

@@ -16,10 +16,10 @@ use Throwable;
 /**
  * Records a scenario, replays it, and only then writes it.
  *
- * A fresh recording is saved only after a clean replay. Refusals attempt
- * quarantine; if saving that fails too, the refusal keeps both causes and
- * claims no artifact. No caller decides between saving and quarantine. Saving
- * replaces a previous fixture only once the new file is complete.
+ * A fresh recording is saved only after a clean replay. Every refusal, at
+ * whatever stage, is handed to Quarantine with the attempt it interrupted. No
+ * caller decides between saving and quarantine. Saving replaces a previous
+ * fixture only once the new file is complete.
  *
  * The replay does two jobs at once. A recording captures what Stripe did, but a
  * fixture's entitlement column is what the *application* made of it, and that
@@ -56,14 +56,12 @@ final readonly class RecordAndVerify
         // A round number in the recent past. Stripe rejects a clock frozen in
         // the future, and a scenario that starts mid-hour makes every recorded
         // offset harder to read than it needs to be.
-        $startsAt ??= CarbonImmutable::now('UTC')->subDay()->startOfHour();
-
-        $requestIds = [];
+        $attempt = new RecordingAttempt($scenario, $startsAt ?? CarbonImmutable::now('UTC')->subDay()->startOfHour());
 
         try {
-            ['fixture' => $recorded, 'captured' => $captured, 'requestIds' => $requestIds] = $this->recorder->record($scenario, $startsAt);
+            $recorded = $this->recorder->record($attempt);
 
-            $report = $this->verified($recorded, $captured, $startsAt);
+            $report = $this->verified($recorded);
             $fixture = $recorded->withEntitlements(array_map(
                 static fn (StepResult $step): array => $step->actualEntitlements,
                 $report->steps
@@ -76,20 +74,10 @@ final readonly class RecordAndVerify
             try {
                 FixtureFile::write($fixture, $path);
             } catch (Throwable $cause) {
-                throw RecordingRefused::saveFailed($fixture, $captured, $startsAt, $report, $cause);
+                throw Refusal::saveFailed($fixture, $report, $cause);
             }
-        } catch (RecordingRefused $refusal) {
-            if ($requestIds !== []) {
-                $refusal = $refusal->withRequestIds($requestIds);
-            }
-
-            try {
-                $artifactPath = $this->quarantine($scenario, $refusal);
-            } catch (Throwable $cause) {
-                throw $refusal->quarantineFailed($cause);
-            }
-
-            throw $refusal->quarantinedAt($artifactPath);
+        } catch (Refusal $refusal) {
+            throw (new Quarantine($this->fixturePath))->keep($attempt, $refusal);
         }
 
         return ['fixture' => $fixture, 'path' => $path];
@@ -98,37 +86,20 @@ final readonly class RecordAndVerify
     /**
      * The successful replay, including the entitlements to save at each step.
      *
-     * @param  list<array<string, mixed>>  $captured  what Stripe sent, kept for the quarantine
-     *
-     * @throws RecordingRefused when the recording does not replay clean
+     * @throws Refusal when the recording does not replay clean
      */
-    private function verified(Fixture $recorded, array $captured, CarbonImmutable $startsAt): ReplayReport
+    private function verified(Fixture $recorded): ReplayReport
     {
         try {
             $report = $this->runner->run($recorded);
         } catch (SimulationFailed $e) {
-            throw RecordingRefused::replayRefused($recorded, $captured, $startsAt, $e);
+            throw Refusal::replayRefused($recorded, $e);
         }
 
         if (! $report->passed()) {
-            throw RecordingRefused::didNotReplay($recorded, $captured, $startsAt, $report);
+            throw Refusal::didNotReplay($recorded, $report);
         }
 
         return $report;
-    }
-
-    /** @return string where the quarantine was written */
-    private function quarantine(Scenario $scenario, RecordingRefused $refusal): string
-    {
-        return (new QuarantineArtifact(
-            scenario: $scenario,
-            captured: $refusal->captured,
-            requestIds: $refusal->requestIds,
-            reason: $refusal->reason,
-            startedAt: $refusal->startedAt,
-            failedAt: CarbonImmutable::now('UTC'),
-            replay: $refusal->report,
-            fixture: $refusal->fixture,
-        ))->write($this->fixturePath.DIRECTORY_SEPARATOR.'quarantine');
     }
 }
