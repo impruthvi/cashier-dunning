@@ -3,11 +3,13 @@
 use Carbon\CarbonImmutable;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
+use Impruthvi\CashierDunning\Fixtures\Manifest;
 use Impruthvi\CashierDunning\Record\ClockAdvanceFailed;
 use Impruthvi\CashierDunning\Record\Quarantine;
 use Impruthvi\CashierDunning\Record\RecordingAttempt;
 use Impruthvi\CashierDunning\Record\Refusal;
-use Impruthvi\CashierDunning\Scenarios\ScenarioRepository;
+use Impruthvi\CashierDunning\Scenarios\Scenario;
+use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
 use Impruthvi\CashierDunning\Support\AtomicFile;
 use Stripe\Exception\RateLimitException;
 
@@ -33,7 +35,15 @@ afterEach(function () {
 function shortAttempt(): RecordingAttempt
 {
     $attempt = new RecordingAttempt(
-        (new ScenarioRepository)->find('trial-dunning-cancel-reactivate'),
+        new Scenario(
+            name: 'short-recording',
+            description: 'a dunning cycle that stopped early',
+            steps: [ScenarioStep::at('0d', 'subscribe')],
+            manifest: new Manifest(
+                required: ['customer.subscription.created', 'invoice.payment_failed', 'customer.subscription.deleted'],
+                optional: ['invoice.created'],
+            ),
+        ),
         CarbonImmutable::parse('2026-01-01T00:00:00Z'),
     );
 
@@ -65,13 +75,13 @@ it('records what arrived, what did not, and the request ids Stripe support will 
     $artifact = artifactAt($e->artifactPath);
 
     expect($artifact['quarantined'])->toBeTrue()
-        ->and($artifact['scenario'])->toBe('trial-dunning-cancel-reactivate')
+        ->and($artifact['scenario'])->toBe('short-recording')
         ->and($artifact['reason'])->toBe('the recording ended before every required event arrived')
         ->and($artifact['started_at'])->toBe('2026-01-01T00:00:00+00:00')
         ->and($artifact['failed_at'])->toBe('2026-01-01T00:01:30+00:00')
         ->and($artifact['elapsed_seconds'])->toBe(90)
-        ->and($artifact['missing_events'])->toContain('invoice.payment_failed', 'customer.subscription.deleted')
-        ->and($artifact['missing_events'])->not->toContain('customer.subscription.created')
+        ->and($artifact['required_events'])->toBe(['customer.subscription.created', 'invoice.payment_failed', 'customer.subscription.deleted'])
+        ->and($artifact['missing_events'])->toBe(['invoice.payment_failed', 'customer.subscription.deleted'])
         ->and(array_column($artifact['captured_events'], 'id'))->toBe(['evt_1', 'evt_2', 'evt_3'])
         ->and($artifact['request_ids'])->toBe(['req_abc123'])
         ->and($artifact)->not->toHaveKeys(['replay', 'fixture']);
@@ -88,12 +98,10 @@ it('flags events the scenario never declared', function () {
 it('names the same missing events in the message as in the artifact', function () {
     $e = (new Quarantine($this->root))->keep(shortAttempt(), Refusal::missingEvents());
 
-    $missing = artifactAt($e->artifactPath)['missing_events'];
-
     expect($e->getMessage())->toContain(
-        'Recording [trial-dunning-cancel-reactivate] is incomplete: the recording ended before every required event arrived.',
+        'Recording [short-recording] is incomplete: the recording ended before every required event arrived.',
         'No fixture was written.',
-        'Never arrived: '.implode(', ', $missing),
+        'Never arrived: invoice.payment_failed, customer.subscription.deleted',
         'Captured 3 event(s): customer.subscription.created, invoice.created, radar.early_fraud_warning.created',
         'Diagnostics written to '.$e->artifactPath,
     );
@@ -102,8 +110,8 @@ it('names the same missing events in the message as in the artifact', function (
 it('writes where a failed recording can be found again, and never as a fixture', function () {
     $e = (new Quarantine($this->root))->keep(shortAttempt(), Refusal::missingEvents());
 
-    expect(dirname((string) $e->artifactPath))->toBe($this->root.DIRECTORY_SEPARATOR.'quarantine')
-        ->and(basename((string) $e->artifactPath))->toStartWith('trial-dunning-cancel-reactivate-20260101-000130-')
+    expect(dirname((string) $e->artifactPath))->toBe(nativePath($this->root, 'quarantine'))
+        ->and(basename((string) $e->artifactPath))->toStartWith('short-recording-20260101-000130-')
         ->and(basename((string) $e->artifactPath))->toEndWith('.quarantine.json')
         ->and($e->context())->toBe([]);
 

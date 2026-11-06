@@ -48,7 +48,7 @@ it('does not mistake a quarantined recording for a fixture', function (string $n
     $repository = new FixtureRepository($root);
 
     try {
-        expect($repository->files())->not->toContain($root.'/quarantine/'.$name)
+        expect($repository->files())->not->toContain(nativePath($root, 'quarantine', $name))
             ->and($repository->scenarios())->not->toHaveKey(basename($name, '.json'));
     } finally {
         unlink($root.'/quarantine/'.$name);

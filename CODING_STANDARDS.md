@@ -9,8 +9,8 @@ true: grep README.md, GLOSSARY.md, docs/adr/ and the SimulationEnvironment docbl
 glossary term (isolation, transaction, side effect), not just the changed hunk.
 
 When a diff changes how a recording is refused, written or quarantined, every statement of
-it must still be true: grep README.md, GLOSSARY.md and the Recorder, RecordAndVerify and
-RecordingRefused and QuarantineArtifact docblocks for quarantine, refused, manifest and
+it must still be true: grep README.md, GLOSSARY.md and the Recorder, RecordAndVerify, Quarantine and
+RecordingRefused docblocks for quarantine, refused, manifest and
 what an artifact holds.
 A claim about what a quarantine contains needs a test that writes one and finds it there.
 

@@ -14,6 +14,7 @@ use Impruthvi\CashierDunning\Simulation\Exceptions\SimulationFailed;
 use Impruthvi\CashierDunning\Support\AtomicFile;
 use Laravel\Cashier\Events\WebhookReceived;
 use Stripe\Exception\RateLimitException;
+use Stripe\Util\CaseInsensitiveArray;
 
 /*
  * Recording, verifying and writing are one decision: a fixture reaches disk only
@@ -83,6 +84,11 @@ function taggedRecordingScript(array $events): array
     ] as $endpoint => $requestId) {
         $script[$endpoint]['__headers'] = ['Request-Id' => $requestId];
     }
+
+    // Stripe's header casing is not guaranteed, and the SDK may hand headers
+    // over as a plain array or as its own case-insensitive one.
+    $script['POST /v1/customers']['__headers'] = ['request-id' => 'req_customer'];
+    $script['GET /v1/test_helpers/test_clocks/*']['__headers'] = new CaseInsensitiveArray(['Request-Id' => 'req_clock_status']);
 
     return $script;
 }
