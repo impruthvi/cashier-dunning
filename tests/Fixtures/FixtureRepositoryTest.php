@@ -36,25 +36,29 @@ it('lets an application recording shadow a shipped one of the same name', functi
     rmdir(dirname($application));
 });
 
-it('does not mistake a quarantined recording for a fixture', function () {
+it('does not mistake a quarantined recording for a fixture', function (string $name) {
     // A failed recording is kept for diagnosis beside the fixtures, not as
     // one. Listing it as a scenario offers a replay of something that never
-    // completed, and the doctor would report it as a broken fixture.
+    // completed, and the doctor would report it as a broken fixture. Only
+    // provider folders are fixtures, so this holds whatever the file is called.
     $root = sys_get_temp_dir().'/cashier-dunning-test-'.uniqid();
     mkdir($root.'/quarantine', 0755, true);
-    file_put_contents($root.'/quarantine/trial-dunning-cancel-reactivate-20260101-000000.quarantine.json', '{}');
+    file_put_contents($root.'/quarantine/'.$name, '{}');
 
     $repository = new FixtureRepository($root);
 
     try {
-        expect($repository->files())->not->toContain($root.'/quarantine/trial-dunning-cancel-reactivate-20260101-000000.quarantine.json')
-            ->and($repository->scenarios())->not->toHaveKey('trial-dunning-cancel-reactivate-20260101-000000.quarantine');
+        expect($repository->files())->not->toContain(nativePath($root, 'quarantine', $name))
+            ->and($repository->scenarios())->not->toHaveKey(basename($name, '.json'));
     } finally {
-        unlink($root.'/quarantine/trial-dunning-cancel-reactivate-20260101-000000.quarantine.json');
+        unlink($root.'/quarantine/'.$name);
         rmdir($root.'/quarantine');
         rmdir($root);
     }
-});
+})->with([
+    'quarantine suffix' => 'trial-dunning-cancel-reactivate-20260101-000000.quarantine.json',
+    'plain json' => 'abandoned-recording.json',
+]);
 
 it('ignores an application path that does not exist', function () {
     expect((new FixtureRepository('/no/such/directory'))->paths())->toHaveCount(1);

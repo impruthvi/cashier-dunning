@@ -12,9 +12,7 @@ use Impruthvi\CashierDunning\Fixtures\FixtureFile;
 use Impruthvi\CashierDunning\Fixtures\Normalizer;
 use Impruthvi\CashierDunning\Fixtures\Provider;
 use Impruthvi\CashierDunning\Fixtures\Step;
-use Impruthvi\CashierDunning\Record\Exceptions\RecordingRefused;
 use Impruthvi\CashierDunning\Scenarios\ActionType;
-use Impruthvi\CashierDunning\Scenarios\Scenario;
 use Impruthvi\CashierDunning\Scenarios\ScenarioStep;
 use Impruthvi\CashierDunning\Support\WebhookEvent;
 use Laravel\Cashier\Cashier;
@@ -41,7 +39,8 @@ use Throwable;
  * as a later review step somebody can forget.
  *
  * Talks to Stripe and nothing else. Whether a recording is verified, written or
- * quarantined is RecordAndVerify's decision, and it is the only caller.
+ * quarantined is RecordAndVerify's decision, and it is the only caller. What
+ * Stripe sent goes onto the attempt as it arrives, so it outlives a refusal.
  *
  * @internal
  */
@@ -54,20 +53,18 @@ final readonly class Recorder
     ) {}
 
     /**
-     * The fixture, and every event Stripe sent as it arrived.
+     * The fixture, recorded into the attempt.
      *
-     * The raw capture comes back too, because the fixture is redacted,
-     * normalised and holds only the events the scenario declared. A caller that
-     * has to quarantine a recording later needs what Stripe actually sent,
-     * along with the request ids from its Stripe responses.
+     * The attempt is filled as recording goes on: every event Stripe sent, as
+     * it sent it, and the request id of every Stripe response, clock deletion
+     * included. The fixture is redacted, normalised and holds only the events
+     * the scenario declared, so a recording that is refused later needs the
+     * attempt to show what Stripe actually did.
      *
-     * @return array{fixture: Fixture, captured: list<array<string, mixed>>, requestIds: list<string>}
-     *
-     * @throws RecordingRefused when the recording is incomplete or cannot be
-     *                          turned into a fixture. It carries what was
-     *                          captured, so the caller can quarantine it.
+     * @throws Refusal when the recording is incomplete or cannot be turned
+     *                 into a fixture
      */
-    public function record(Scenario $scenario, CarbonImmutable $startsAt): array
+    public function record(RecordingAttempt $attempt): Fixture
     {
         // Scope response collection to this call, including cleanup, while
         // leaving the reusable recorder and its supplied client untouched.
@@ -75,27 +72,25 @@ final readonly class Recorder
         $recorder = new self($stripe, $this->eventTimeoutSeconds, $this->clockTimeoutSeconds);
 
         try {
-            $recorded = $recorder->capture($scenario, $startsAt);
+            return $recorder->capture($attempt);
         } catch (RateLimitException $e) {
             // Clock creation can be refused before there is a clock to clean up.
-            throw RecordingRefused::rateLimited($scenario->name, [], $startsAt, $e)
-                ->withRequestIds($stripe->requestIds);
-        } catch (RecordingRefused $e) {
-            // Capture after cleanup, including the clock deletion response.
-            throw $e->withRequestIds($stripe->requestIds);
+            throw Refusal::rateLimited($e);
+        } finally {
+            // After cleanup, so the clock deletion response is included.
+            $attempt->requestIds = $stripe->requestIds;
         }
-
-        return [...$recorded, 'requestIds' => $stripe->requestIds];
     }
 
-    /** @return array{fixture: Fixture, captured: list<array<string, mixed>>} */
-    private function capture(Scenario $scenario, CarbonImmutable $startsAt): array
+    private function capture(RecordingAttempt $attempt): Fixture
     {
+        $scenario = $attempt->scenario;
+        $startsAt = $attempt->startedAt;
         $clock = TestClock::create($this->stripe, $startsAt, $this->clockTimeoutSeconds);
         $poller = new EventPoller($this->stripe, $startsAt->getTimestamp());
 
-        // Built afresh for every recording, so nothing one recording captured
-        // can satisfy the manifest of the next.
+        // Built afresh for every recording, so nothing one recording created
+        // can be mistaken for something the next one did.
         $state = new RecordingState;
         $steps = [];
 
@@ -108,12 +103,12 @@ final readonly class Recorder
 
         try {
             foreach ($scenario->steps as $index => $step) {
-                $steps[] = $this->recordStep($scenario, $step, $index, $clock, $poller, $state, $normalizer);
+                $steps[] = $this->recordStep($attempt, $step, $index, $clock, $poller, $state, $normalizer);
             }
         } catch (RateLimitException $e) {
-            throw RecordingRefused::rateLimited($scenario->name, $state->captured, $startsAt, $e);
+            throw Refusal::rateLimited($e);
         } catch (ClockAdvanceFailed $e) {
-            throw RecordingRefused::clockFailed($scenario->name, $state->captured, $startsAt, $e);
+            throw Refusal::clockFailed($e);
         } finally {
             $clock->delete();
         }
@@ -124,29 +119,27 @@ final readonly class Recorder
             // before a replay, and the replay runs on exactly what would be read
             // back. The manifest is judged there too: a required event is
             // declared, so it reaches the fixture whenever it was captured.
-            $fixture = FixtureFile::decode(FixtureFile::encode(new Fixture(
+            return FixtureFile::decode(FixtureFile::encode(new Fixture(
                 provider: Provider::Stripe,
                 scenario: $scenario->name,
                 provenance: $this->provenance($startsAt, $state),
                 manifest: $scenario->manifest,
                 steps: $steps,
             )));
-        } catch (IncompleteFixture $e) {
-            throw RecordingRefused::missingEvents($scenario->name, $e->missing, $state->captured, $startsAt);
+        } catch (IncompleteFixture) {
+            throw Refusal::missingEvents();
         } catch (InvalidFixture $e) {
             // Reachable when the allowlist keeps a string field whose recorded
             // value happens to contain {{...}}, or the normalizer leaves an id
             // of a kind it does not know as a literal. The clock is gone by
             // now, so the capture is refused like a short recording: it is the
             // only record of what Stripe sent.
-            throw RecordingRefused::invalidFixture($scenario->name, $state->captured, $startsAt, $e);
+            throw Refusal::invalidFixture($e);
         }
-
-        return ['fixture' => $fixture, 'captured' => $state->captured];
     }
 
     private function recordStep(
-        Scenario $scenario,
+        RecordingAttempt $attempt,
         ScenarioStep $step,
         int $index,
         TestClock $clock,
@@ -165,7 +158,8 @@ final readonly class Recorder
         // recording as a whole. Waiting for a specific event here would make a
         // scenario that is merely arranged differently look like a failure.
         $events = $poller->collect([], $this->eventTimeoutSeconds);
-        $state->captured = [...$state->captured, ...$events];
+        $attempt->captured = [...$attempt->captured, ...$events];
+        $scenario = $attempt->scenario;
 
         foreach ($events as $event) {
             $type = WebhookEvent::type($event) ?? '';

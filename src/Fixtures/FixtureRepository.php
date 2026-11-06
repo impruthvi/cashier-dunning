@@ -29,20 +29,24 @@ final readonly class FixtureRepository
         ], static fn (?string $path): bool => $path !== null && is_dir($path)));
     }
 
-    /** @return list<string> every fixture file, application recordings first */
+    /**
+     * Every fixture file, application recordings first.
+     *
+     * Only provider folders are searched. Anything else under a fixture
+     * directory, a quarantined recording included, is not a fixture whatever
+     * it is called.
+     *
+     * @return list<string>
+     */
     public function files(): array
     {
         $files = [];
 
         foreach ($this->paths() as $path) {
-            foreach (glob($path.'/*/*.json') ?: [] as $file) {
-                // A failed recording is quarantined beside the fixtures for
-                // diagnosis. It never completed, so it is not one of them.
-                if (str_ends_with($file, '.quarantine.json')) {
-                    continue;
+            foreach (Provider::cases() as $provider) {
+                foreach (glob($path.'/'.$provider->value.'/*.json') ?: [] as $file) {
+                    $files[] = $file;
                 }
-
-                $files[] = $file;
             }
         }
 
