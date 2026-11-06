@@ -8,7 +8,7 @@ Run `composer check`. It runs format, analyse, then test, and stops at the first
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for impruthvi/cashier-dunning, via the `gh` CLI. See `docs/agents/issue-tracker.md`. A design settled in conversation gets an issue before code, referenced from the commits, so `/code-review` has a spec.
+Read an issue with `gh issue view <n> --json number,title,body,labels,comments`; every other operation is in `docs/agents/issue-tracker.md`. A design settled in conversation gets an issue before code, referenced from the commits, so `/code-review` has a spec.
 
 ### Triage labels
 

@@ -5,12 +5,12 @@ Read during review. These are judgement calls no tool checks; PHPStan, Pint and 
 ## Behaviour claims
 
 When a diff changes isolation or side-effect behaviour, every statement of it must still be
-true: grep README.md, GLOSSARY.md, docs/adr/ and the SimulationEnvironment docblock for the
+true: grep README.md, GLOSSARY.md, docs/adr/ and the `SimulationEnvironment` docblock for the
 glossary term (isolation, transaction, side effect), not just the changed hunk.
 
 When a diff changes how a recording is refused, written or quarantined, every statement of
-it must still be true: grep README.md, GLOSSARY.md and the Recorder, RecordAndVerify, Quarantine and
-RecordingRefused docblocks for quarantine, refused, manifest and
+it must still be true: grep README.md, GLOSSARY.md and the `Recorder`, `RecordAndVerify`, `Quarantine` and
+`RecordingRefused` docblocks for quarantine, refused, manifest and
 what an artifact holds.
 A claim about what a quarantine contains needs a test that writes one and finds it there.
 
@@ -30,6 +30,8 @@ The PHPStan baseline stays empty: fix an error by narrowing the type where the v
 A path the code under test produces is compared against `nativePath()` from `tests/Pest.php`,
 not a string joined with `'/'`: the package joins with `DIRECTORY_SEPARATOR`, so a slash-built
 expectation passes on Linux and fails only in the Windows CI job.
+A negative assertion on a path (`not->toContain`, `not->toHaveKey`) needs `nativePath()` most of
+all: a wrong separator makes it pass on every OS, Windows included, so no CI job catches it.
 
 ## Removed assertions
 
