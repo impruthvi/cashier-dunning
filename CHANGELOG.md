@@ -2,16 +2,6 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
-## Unreleased
-
-**Breaking PHP API Changes And Migration**
-
-- **`RecordingRefused` keeps only its message, previous exception, `report`, `artifactPath` and `context()`.** The public `scenario`, `reason`, `captured`, `requestIds`, `missing`, `startedAt`, `fixture` and `quarantineFailure` fields are removed, along with the static factories and `withRequestIds()`, `quarantinedAt()` and `quarantineFailed()`. The message already names what never arrived and what was captured. The quarantine artifact at `artifactPath` holds the captured events, request ids and fixture. A failed quarantine is under `context()['quarantine_failure']`.
-- **`QuarantineArtifact` is removed.** The artifact is written by the internal `Quarantine`, which `RecordAndVerify` hands every refusal to. The artifact's contents and filename are unchanged.
-- A refusal's message now names the required events that never arrived whatever the refusal was, so a rate-limited recording or a stuck test clock says what it is still missing. Before, only the "incomplete" refusal did.
-- **`Recorder::record()` takes a `RecordingAttempt` and returns the `Fixture`.** The captured events and request ids are filled into the attempt as recording goes on. `Recorder` remains internal.
-- **`FixtureRepository` searches only provider folders** (`<dir>/stripe/*.json`). Other subfolders of a fixture directory were never fixtures, and are no longer scanned.
-
 ## v0.4.0 - 2026-11-05
 
 This release hardens fixture loading and recording failures, improves diagnostics, and introduces breaking changes for consumers using the PHP APIs directly.
