@@ -69,7 +69,7 @@
             "@composer dump-autoload --quiet @no_additional_args",
             "vendor/bin/phpstan analyse --memory-limit=1G"
         ],
-        "test": "vendor/bin/pest",
+        "test": "vendor/bin/pest --compact --colors=never --display-skipped",
         "test-coverage": "vendor/bin/pest --coverage",
         "format": "vendor/bin/pint",
         "check": [
