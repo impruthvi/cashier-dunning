@@ -107,13 +107,22 @@ final class Allowlist
      *
      * @var list<string>
      */
-    private const ERROR = [
+    private const ERROR_BODY = [
         'data.object.error.type',
         'data.object.error.code',
         'data.object.error.decline_code',
         'data.object.error.message',
         'data.object.error.param',
     ];
+
+    /**
+     * The fields of an error body that hold Stripe's own enumerated
+     * vocabulary, such as `card_error` and `card_declined`, relative to the
+     * body. See vocabularyPathsIn().
+     *
+     * @var list<string>
+     */
+    private const ERROR_VOCABULARY = ['error.type', 'error.code', 'error.decline_code'];
 
     /** @var list<string> */
     private const SUBSCRIPTION = [
@@ -245,7 +254,7 @@ final class Allowlist
     private function permittedForObject(array $object): array
     {
         if (self::isErrorBody($object)) {
-            return self::ERROR;
+            return self::ERROR_BODY;
         }
 
         $kind = $object['object'] ?? null;
@@ -257,12 +266,26 @@ final class Allowlist
     }
 
     /**
-     * Whether a bare provider object is Stripe's error body: an `error` and no
-     * `object` of its own.
+     * Paths in a bare provider object, relative to it, whose values are
+     * Stripe's own vocabulary rather than data: the `type`, `code` and
+     * `decline_code` of an error body. Values such as `card_declined` read as
+     * `card_` ids to {@see Placeholder::kindOf()}, so the literal-id rule needs
+     * to know where they may appear.
+     *
+     * @param  array<array-key, mixed>  $object
+     * @return list<string>
+     */
+    public function vocabularyPathsIn(array $object): array
+    {
+        return self::isErrorBody($object) ? self::ERROR_VOCABULARY : [];
+    }
+
+    /**
+     * Stripe's error body has an `error` and no `object` of its own.
      *
      * @param  array<array-key, mixed>  $object
      */
-    public static function isErrorBody(array $object): bool
+    private static function isErrorBody(array $object): bool
     {
         return ! array_key_exists('object', $object) && array_key_exists('error', $object);
     }

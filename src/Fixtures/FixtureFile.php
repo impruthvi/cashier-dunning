@@ -24,18 +24,16 @@ final class FixtureFile
         | JSON_THROW_ON_ERROR;
 
     /**
-     * The fields of Stripe's error body that hold its own enumerated
-     * vocabulary, such as `card_error` and `card_declined`. Those read as
-     * `card_` ids to {@see Placeholder::kindOf()}, but are never ids, so the
-     * literal-id rule skips them. `message` and `param` are still checked.
+     * What a value at one of {@see Allowlist::vocabularyPathsIn()} must look
+     * like to be exempt from the literal-id rule: lowercase words joined by
+     * underscores, as `card_declined` is. A real id such as `card_1AbC23` in
+     * the same place is still refused.
      *
      * The rule is narrowed here rather than in kindOf() because kindOf() also
      * decides what the recorder replaces, and real Stripe ids can be all
      * lowercase words, such as a custom price id `price_monthly`.
-     *
-     * @var list<string>
      */
-    private const ERROR_VOCABULARY = ['error.type', 'error.code', 'error.decline_code'];
+    private const VOCABULARY_WORD = '/^[a-z]+(?:_[a-z]+)*$/';
 
     public static function read(string $path): Fixture
     {
@@ -122,7 +120,7 @@ final class FixtureFile
                     $exchange->responseBody,
                     $index,
                     "the response body of [{$exchange->method} {$exchange->path}]",
-                    exempt: Allowlist::isErrorBody($exchange->responseBody) ? self::ERROR_VOCABULARY : [],
+                    vocabularyPaths: $allowlist->vocabularyPathsIn($exchange->responseBody),
                 );
             }
         }
@@ -136,16 +134,16 @@ final class FixtureFile
 
     /**
      * @param  array<array-key, mixed>  $payload
-     * @param  list<string>  $exempt  paths whose values are never provider ids
+     * @param  list<string>  $vocabularyPaths  paths where Stripe's own vocabulary is not read as an id
      */
-    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = '', array $exempt = []): void
+    private static function refuseLiteralIds(array $payload, int $step, string $where, string $prefix = '', array $vocabularyPaths = []): void
     {
         foreach ($payload as $key => $value) {
             $path = $prefix === '' ? (string) $key : $prefix.'.'.$key;
 
             if (is_array($value)) {
-                self::refuseLiteralIds($value, $step, $where, $path, $exempt);
-            } elseif (in_array($path, $exempt, true)) {
+                self::refuseLiteralIds($value, $step, $where, $path, $vocabularyPaths);
+            } elseif (is_string($value) && in_array($path, $vocabularyPaths, true) && preg_match(self::VOCABULARY_WORD, $value) === 1) {
                 continue;
             } elseif (is_string($value) && ($kind = Placeholder::kindOf($value)) !== null) {
                 throw InvalidFixture::literalProviderId($step, $where, $path, $kind);

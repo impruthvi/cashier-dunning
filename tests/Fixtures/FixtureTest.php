@@ -185,15 +185,14 @@ it('refuses a recorded Stripe error response carrying a field the allowlist does
     ]]));
 })->throws(InvalidFixture::class, 'Step 0 is invalid: the recorded response to [GET /v1/subscriptions/{{sub_1}}] contains fields not permitted by the allowlist: error.payment_method');
 
-it('refuses a literal card id in a recorded Stripe error response', function () {
+it('refuses a literal card id in a recorded Stripe error response', function (string $field) {
     // The error's vocabulary, such as card_declined, is exempt from the
-    // literal-id rule. Its other fields are not.
-    FixtureFile::decode(fixtureWithExchangeResponse(['error' => [
-        'type' => 'card_error',
-        'code' => 'card_declined',
-        'param' => 'card_1AbC23',
-    ]]));
-})->throws(InvalidFixture::class, 'Step 0 is invalid: the response body of [GET /v1/subscriptions/{{sub_1}}] contains a literal provider id at [error.param]. Use a card placeholder such as {{card_1}}.');
+    // literal-id rule. A real id is not, even where vocabulary belongs.
+    $error = ['type' => 'card_error', 'code' => 'card_declined', $field => 'card_1AbC23'];
+
+    expect(fn () => FixtureFile::decode(fixtureWithExchangeResponse(['error' => $error])))
+        ->toThrow(InvalidFixture::class, "Step 0 is invalid: the response body of [GET /v1/subscriptions/{{sub_1}}] contains a literal provider id at [error.{$field}]. Use a card placeholder such as {{card_1}}.");
+})->with(['param', 'message', 'code', 'decline_code']);
 
 it('refuses Stripe error vocabulary outside an error body', function () {
     // The exemption is for Stripe's error body alone. A subscription that
