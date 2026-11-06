@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Event;
 use Impruthvi\CashierDunning\CashierDunning;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureRepository;
+use Impruthvi\CashierDunning\Fixtures\Manifest;
 use Impruthvi\CashierDunning\Fixtures\Step;
 use Impruthvi\CashierDunning\Replay\FixtureHttpClient;
 use Impruthvi\CashierDunning\Runner\ReplayRunner;
@@ -126,12 +127,12 @@ it('stands the preflight down when the recording names no single customer', func
         provider: $fixture->provider,
         scenario: 'no-customer',
         provenance: $fixture->provenance,
-        manifest: $fixture->manifest,
+        manifest: new Manifest,
         steps: [
             new Step(
                 advanceTo: $fixture->steps[0]->advanceTo,
                 label: 'nothing that names a customer',
-                events: [['id' => 'evt_1', 'type' => 'ping']],
+                events: [['id' => '{{evt_1}}', 'type' => 'ping']],
             ),
         ],
     );

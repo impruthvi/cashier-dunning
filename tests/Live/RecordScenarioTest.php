@@ -40,8 +40,6 @@ function recordAndWrite(string $scenarioName): Fixture
         dirname(__DIR__, 2).'/fixtures',
     ))->record($scenario);
 
-    expect($fixture->satisfiesManifest())->toBeTrue();
-
     $saved = FixtureFile::read($path);
     $report = app(ReplayRunner::class)->run($saved);
 

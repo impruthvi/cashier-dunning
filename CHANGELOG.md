@@ -2,6 +2,15 @@
 
 All notable changes to `cashier-dunning` will be documented in this file.
 
+## Unreleased
+
+**Changed**
+
+- **`Fixture`'s constructor now refuses content it used to accept.** It runs every rule a fixture loaded from a file meets: at least one step, recognised placeholders, the allowlist on events, match bodies and response bodies, no literal provider IDs, a well-formed match path, and every required event its manifest declares. So a `Fixture` that exists can always be saved and loaded. The exception classes and messages are unchanged.
+  Migration: code that builds a `Fixture` with `new Fixture(...)` or `Fixture::fromArray()` should expect `InvalidFixture` (including `DisallowedField` and `IncompleteFixture`) where it used to get an object back. `FixtureFile::write()` no longer decodes what it saves, because the constructor has already refused anything `FixtureFile::read()` would refuse.
+- **`Fixture::satisfiesManifest()` and `Fixture::missingRequiredEvents()` are removed.** A `Fixture` always satisfies its manifest now.
+  Migration: catch `IncompleteFixture` when building a fixture and read `$e->missing`, or ask the manifest directly with `$fixture->manifest->missingFrom($fixture->eventTypes())`.
+
 ## v0.5.0 - 2026-11-06
 
 This release checks a recording against the fixture rules before it is saved, and reshapes recording refusals, which breaks the PHP API for consumers who use `RecordingRefused` and the quarantine classes directly.

@@ -5,6 +5,7 @@ use Impruthvi\CashierDunning\Fixtures\Exceptions\IncompleteFixture;
 use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
 use Impruthvi\CashierDunning\Fixtures\Fixture;
 use Impruthvi\CashierDunning\Fixtures\FixtureFile;
+use Impruthvi\CashierDunning\Fixtures\Manifest;
 use Impruthvi\CashierDunning\Fixtures\Provider;
 
 function referenceFixturePath(): string
@@ -88,6 +89,18 @@ it('refuses a fixture with no steps', function () {
     // the exact failure this package exists to prevent.
     FixtureFile::decode(json_encode(minimalFixtureArray(['steps' => []])));
 })->throws(InvalidFixture::class, 'contains no steps');
+
+it('refuses to build a fixture with no steps', function () {
+    // Refused by the constructor, not only by the loader, so no path into a
+    // Fixture can hold one that would replay green while asserting nothing.
+    new Fixture(
+        provider: Provider::Stripe,
+        scenario: 'minimal',
+        provenance: [],
+        manifest: new Manifest,
+        steps: [],
+    );
+})->throws(InvalidFixture::class, 'Fixture for scenario [minimal] contains no steps.');
 
 it('refuses an unsupported format version', function () {
     FixtureFile::decode(json_encode(minimalFixtureArray(['format_version' => 99])));
@@ -330,17 +343,14 @@ it('refuses a fixture whose match path breaks the shape rule', function (array $
     ],
 ]);
 
-it('reports required events that the recording never produced', function () {
-    $fixture = Fixture::fromArray(minimalFixtureArray([
+it('refuses to build a fixture missing a required event its manifest declared', function () {
+    Fixture::fromArray(minimalFixtureArray([
         'manifest' => [
             'required_events' => ['customer.subscription.created', 'invoice.payment_failed'],
             'optional_events' => [],
         ],
     ]));
-
-    expect($fixture->satisfiesManifest())->toBeFalse()
-        ->and($fixture->missingRequiredEvents())->toBe(['invoice.payment_failed']);
-});
+})->throws(IncompleteFixture::class, 'Fixture for scenario [minimal] is missing required events: invoice.payment_failed.');
 
 it('refuses to load a recording that came up short of its manifest', function () {
     // A short recording is plausible and wrong: it replays green forever. So it
@@ -352,10 +362,6 @@ it('refuses to load a recording that came up short of its manifest', function ()
         ],
     ])));
 })->throws(InvalidFixture::class, 'invoice.payment_failed');
-
-it('considers the reference fixture to satisfy its own manifest', function () {
-    expect(FixtureFile::read(referenceFixturePath())->satisfiesManifest())->toBeTrue();
-});
 
 it('marks single-event steps as not shuffleable', function () {
     $fixture = FixtureFile::read(referenceFixturePath());
@@ -618,19 +624,17 @@ it('does not scan fixture metadata or keys for literal provider ids', function (
         ->and($fixture->steps[0]->entitlements)->toBe(['price_RealId' => 'prod_RealId']);
 });
 
-it('refuses to save what it would refuse to load, leaving the previous file untouched', function (string $json, string $exception, string $message) {
-    // Fixture::fromArray skips the load-time rules, so this is a fixture the
-    // constructor accepts and the loader would refuse: the kind a recorder
-    // could build if normalising and the rules ever disagreed.
-    $fixture = Fixture::fromArray(json_decode($json, false, 512, JSON_THROW_ON_ERROR));
+it('refuses to build what it would refuse to load, so nothing is saved', function (string $json, string $exception, string $message) {
+    // A recorder could build such a fixture if normalising and the rules ever
+    // disagreed. The constructor refuses it, so there is never one to write.
     $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cd-write-'.uniqid().'.json';
-    file_put_contents($path, 'previous');
 
     try {
-        expect(fn () => FixtureFile::write($fixture, $path))->toThrow($exception, $message)
-            ->and(file_get_contents($path))->toBe('previous');
+        expect(fn () => FixtureFile::write(Fixture::fromArray(json_decode($json, false, 512, JSON_THROW_ON_ERROR)), $path))
+            ->toThrow($exception, $message)
+            ->and(file_exists($path))->toBeFalse();
     } finally {
-        unlink($path);
+        @unlink($path);
     }
 })->with([
     'a field the allowlist does not permit' => [

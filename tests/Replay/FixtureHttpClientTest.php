@@ -179,6 +179,7 @@ it('resolves placeholders inside the response body', function () use ($start) {
     $client = clientFor(fixtureWithSteps([
         stepWith('trial', [exchange('GET', '/v1/subscriptions/{{sub_1}}', [], 200, [
             'id' => '{{sub_1}}',
+            'object' => 'subscription',
             'customer' => '{{cus_1}}',
             'current_period_end' => '{{t+14d}}',
         ])]),

@@ -99,12 +99,12 @@ class InvalidFixture extends RuntimeException
         return self::malformedStep($index, "the match path of [{$exchange->method} {$exchange->path}] {$problem}");
     }
 
-    /** A missing path reads as `''`, which can never match a request. */
-    public static function missingMatchPath(int $index, ApiExchange $exchange): self
+    /** An absent or empty path could never match a request. */
+    public static function missingMatchPath(int $index, string $method): self
     {
         return self::malformedStep(
             $index,
-            "the API exchange [{$exchange->method}] has no match path. ".
+            "the API exchange [{$method}] has no match path. ".
             'Every exchange matches on one, such as /v1/subscriptions/{{sub_1}}.'
         );
     }

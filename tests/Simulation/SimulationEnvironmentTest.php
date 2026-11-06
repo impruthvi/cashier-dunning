@@ -35,7 +35,7 @@ function environment(): SimulationEnvironment
 }
 
 /** @param list<array<string, mixed>> $steps */
-function simulationFixture(array $steps = []): Fixture
+function simulationFixture(array $steps = [['advance_to' => '0d', 'label' => 'start', 'events' => []]]): Fixture
 {
     return new Fixture(
         provider: Provider::Stripe,
@@ -259,27 +259,30 @@ it('intercepts a real Cashier Stripe call without touching the network', functio
     // through Laravel's HTTP stack. ApiRequestor::setHttpClient() is the only
     // seam, and this proves it covers the StripeClient that Cashier actually
     // uses, not just the SDK's legacy static calls.
+    // The fixture names {{cus_1}}, so the billable must carry its replay id.
+    billableUser();
+
     $fixture = simulationFixture([[
         'advance_to' => '0d',
         'label' => 'customer',
         'events' => [],
         'api_responses' => [[
-            'match' => ['method' => 'GET', 'path' => '/v1/customers/cus_anything', 'body' => []],
-            'response' => ['status' => 200, 'body' => ['id' => 'cus_replayed', 'object' => 'customer']],
+            'match' => ['method' => 'GET', 'path' => '/v1/customers/{{cus_1}}', 'body' => []],
+            'response' => ['status' => 200, 'body' => ['id' => '{{cus_1}}', 'object' => 'customer']],
         ]],
     ]]);
 
     [$customer, $calls] = environment()->run(
         $fixture,
         fn () => [
-            Cashier::stripe()->customers->retrieve('cus_anything'),
+            Cashier::stripe()->customers->retrieve('cus_replay1'),
             ApiRequestor::httpClient()->calls(),
         ]
     );
 
-    expect($customer->id)->toBe('cus_replayed')
+    expect($customer->id)->toBe('cus_replay1')
         ->and($calls)->toBe([
-            ['method' => 'GET', 'path' => '/v1/customers/cus_anything', 'step' => 0],
+            ['method' => 'GET', 'path' => '/v1/customers/cus_replay1', 'step' => 0],
         ]);
 });
 

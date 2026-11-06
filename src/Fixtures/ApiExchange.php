@@ -2,6 +2,8 @@
 
 namespace Impruthvi\CashierDunning\Fixtures;
 
+use Impruthvi\CashierDunning\Fixtures\Exceptions\InvalidFixture;
+
 /**
  * One recorded provider API call and its response, scoped to a step.
  *
@@ -31,17 +33,24 @@ final readonly class ApiExchange
 
     /**
      * A missing key takes the format's default: method GET, status 200, empty
-     * bodies. The path has no default: a missing one reads as `''`, which
-     * loading refuses ({@see MatchPath}). A key with the wrong type is refused.
+     * bodies. The path has no default: a missing one is refused, naming the
+     * step. A key with the wrong type is refused.
+     *
+     * @throws InvalidFixture
      */
-    public static function fromDecoded(DecodedObject $exchange): self
+    public static function fromDecoded(DecodedObject $exchange, int $step): self
     {
         $match = $exchange->nested('match');
         $response = $exchange->nested('response');
+        $method = strtoupper($match->string('method', 'GET'));
+
+        if (! $match->has('path')) {
+            throw InvalidFixture::missingMatchPath($step, $method);
+        }
 
         return new self(
-            method: strtoupper($match->string('method', 'GET')),
-            path: $match->string('path', ''),
+            method: $method,
+            path: $match->string('path'),
             matchBody: $match->object('body'),
             responseStatus: $response->int('status', 200),
             responseBody: $response->object('body'),

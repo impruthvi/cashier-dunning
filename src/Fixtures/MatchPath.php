@@ -7,8 +7,8 @@ namespace Impruthvi\CashierDunning\Fixtures;
  * `/v1/subscriptions/{{sub_1}}`.
  *
  * Separate from the allowlist, which judges fields: a path is not a field.
- * Checked when a fixture is saved or loaded: on save it catches a recorded id
- * the normalizer did not recognise, and on load a hand author's path.
+ * Checked whenever a Fixture is built: from a recording it catches an id the
+ * normalizer did not recognise, and from a file a hand author's path.
  *
  *   - It starts with `/` and has no query string or fragment. The provider SDK
  *     hands a request's parameters to the HTTP client separately, and replay

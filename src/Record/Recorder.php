@@ -114,11 +114,11 @@ final readonly class Recorder
         }
 
         try {
-            // Through the same encode and decode as the file the fixture will
-            // become, so a recording the loader would refuse is refused now,
-            // before a replay, and the replay runs on exactly what would be read
-            // back. The manifest is judged there too: a required event is
-            // declared, so it reaches the fixture whenever it was captured.
+            // Building the Fixture is what refuses a recording the loader would
+            // refuse, manifest included: a required event is declared, so it
+            // reaches the fixture whenever it was captured. The encode and
+            // decode are for fidelity only, so the verifying replay runs on
+            // exactly what will be read back from the file.
             return FixtureFile::decode(FixtureFile::encode(new Fixture(
                 provider: Provider::Stripe,
                 scenario: $scenario->name,
