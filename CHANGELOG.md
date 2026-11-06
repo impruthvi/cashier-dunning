@@ -10,6 +10,8 @@ All notable changes to `cashier-dunning` will be documented in this file.
   Migration: code that builds a `Fixture` with `new Fixture(...)` or `Fixture::fromArray()` should expect `InvalidFixture` (including `DisallowedField` and `IncompleteFixture`) where it used to get an object back. `FixtureFile::write()` no longer decodes what it saves, because the constructor has already refused anything `FixtureFile::read()` would refuse.
 - **`Fixture::satisfiesManifest()` and `Fixture::missingRequiredEvents()` are removed.** A `Fixture` always satisfies its manifest now.
   Migration: catch `IncompleteFixture` when building a fixture and read `$e->missing`, or ask the manifest directly with `$fixture->manifest->missingFrom($fixture->eventTypes())`.
+- **`InvalidFixture::missingMatchPath()` takes the exchange's method as a string** instead of an `ApiExchange`, because decoding now refuses an absent match path before an exchange exists. Its message is unchanged.
+  Migration: pass `$exchange->method` instead of `$exchange`.
 
 ## v0.5.0 - 2026-11-06
 
