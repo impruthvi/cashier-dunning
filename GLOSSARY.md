@@ -40,6 +40,10 @@ _Avoid_: Safety, rollback (rollback is only one part)
 The application's customer record that the fixture's webhooks are addressed to.
 _Avoid_: User, customer (Stripe's customer is a different thing)
 
+**Entitlement**:
+One thing the application lets a billable do or have at a given moment, such as access to teams or a project limit, as the application itself decides it. A fixture records the entitlements expected at each step, and a replay compares the application's against them.
+_Avoid_: Permission, feature flag, access (as a noun for one item)
+
 **Side effect**:
 Something the application tried to do to the outside world during a replay, such as a mail, notification or queued job. Side effects are recorded and counted, and their delivery is refused.
 _Avoid_: Outbound, delivery
@@ -47,6 +51,10 @@ _Avoid_: Outbound, delivery
 **Allowlist**:
 The fields a fixture may contain. Anything else is dropped when a fixture is recorded, and refused when a fixture is saved or loaded. Fixtures are committed to a public repository, which is why the allowlist exists.
 _Avoid_: Redaction list, denylist, publish (for saving a file)
+
+**Scenario**:
+A named billing story, such as a trial that ends in dunning, that a fixture replays and a recording follows. Most scenarios carry the actions and manifest needed to record them; a hand-authored fixture's scenario has a name and a story but cannot be recorded.
+_Avoid_: Journey, test case, lifecycle (lifecycle is what Stripe does; a scenario is the named story of one)
 
 **Manifest**:
 The event types a scenario promises its recording will contain. Required events must appear and optional ones may. A recording missing a required event is incomplete, and is refused when saved or loaded.
